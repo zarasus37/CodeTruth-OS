@@ -15,3 +15,8 @@ export {
   type CouncilModel,
   type LlmCouncilResult,
 } from "./council.js";
+export {
+  applyLlmCouncilEvidenceToFindings,
+  buildLlmEvidenceFromBullet,
+  extractFilePathsFromClaim,
+} from "./evidence.js";

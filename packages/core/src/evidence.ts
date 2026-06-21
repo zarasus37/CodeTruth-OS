@@ -91,6 +91,44 @@ export function createEvidenceFromSymbol(
   });
 }
 
+export function createLlmAnalysisEvidence(input: {
+  snapshotHash: string;
+  model: string;
+  claim: string;
+  filePath?: string;
+  lineStart?: number;
+  lineEnd?: number;
+  symbolId?: string;
+  symbolName?: string;
+  phase?: "independent" | "cross_review" | "consensus";
+  confidenceAtExtraction?: ConfidenceLevel;
+  metadata?: Record<string, unknown>;
+}): EvidenceRecord {
+  const filePath = input.filePath ?? "repository";
+  const rawSnippet = input.claim.slice(0, RAW_SNIPPET_LIMIT);
+  const corroborated = input.lineStart != null || input.symbolId != null;
+
+  return enrichEvidenceRecord({
+    snapshotHash: input.snapshotHash,
+    filePath,
+    lineStart: input.lineStart,
+    lineEnd: input.lineEnd,
+    symbolId: input.symbolId,
+    symbolName: input.symbolName,
+    extractionMethod: "llm_analysis",
+    rawSnippet,
+    snippet: rawSnippet.slice(0, SNIPPET_LIMIT),
+    confidenceAtExtraction:
+      input.confidenceAtExtraction ??
+      (corroborated ? "Strongly Inferred" : "Weakly Inferred"),
+    metadata: {
+      councilModel: input.model,
+      phase: input.phase,
+      ...input.metadata,
+    },
+  });
+}
+
 export function createAbsenceEvidence(
   snapshot: SnapshotRecord,
   finding: Pick<Finding, "title" | "description"> & { id?: string },

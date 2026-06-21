@@ -12,7 +12,12 @@ import type { CouncilModel } from "./models.js";
 export function isWeakEvidence(chain: EvidenceRecord[] | undefined): boolean {
   return (
     !chain?.length ||
-    chain.every((e) => e.extractionMethod === "inference" && !e.lineStart && !e.symbolId)
+    chain.every(
+      (e) =>
+        (e.extractionMethod === "inference" || e.extractionMethod === "llm_analysis") &&
+        !e.lineStart &&
+        !e.symbolId,
+    )
   );
 }
 

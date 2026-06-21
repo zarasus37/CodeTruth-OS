@@ -20,6 +20,7 @@ import {
   resetSessionLlmCost,
   type LlmMessage,
 } from "./client.js";
+import { buildLlmEvidenceCitedFromBullets, buildLlmEvidenceFromBullet } from "./evidence.js";
 
 export const COUNCIL_MODELS = [
   "Architecture Model",
@@ -63,8 +64,17 @@ function parseBulletList(text: string): string[] {
     .slice(0, 12);
 }
 
+function snapshotHashFromBundle(bundle: CouncilEvidenceBundle): string {
+  return (
+    bundle.evidencePool[0]?.snapshotHash ??
+    bundle.findings[0]?.evidenceChain[0]?.snapshotHash ??
+    ""
+  );
+}
+
 async function phase1(
   model: CouncilModel,
+  bundle: CouncilEvidenceBundle,
   bundleContext: string,
   modelContext: string,
   injectedContext: CouncilModelContext,
@@ -86,18 +96,26 @@ ${bundleContext}`,
   const result = await completeChatWithMeta(messages, { model: getCouncilModel(model) });
   onProvider?.(result.provider, result.model);
   const bullets = parseBulletList(result.content);
+  const snapshotHash = snapshotHashFromBundle(bundle);
   return {
     model,
     bullets,
     confidence: bullets.length >= 4 ? "Strongly Inferred" : "Weakly Inferred",
     findingsReviewed: bullets.length,
-    evidenceCited: [],
+    evidenceCited: buildLlmEvidenceCitedFromBullets({
+      bullets,
+      model,
+      snapshotHash,
+      pool: bundle.evidencePool,
+      phase: "independent",
+    }),
     injectedContext,
   };
 }
 
 async function phase2Challenge(
   model: CouncilModel,
+  bundle: CouncilEvidenceBundle,
   context: string,
   peerNotes: Record<CouncilModel, ModelAssessment>,
 ): Promise<{ assessment: ModelAssessment; contradictions: ContradictionRecord[] }> {
@@ -134,20 +152,30 @@ ${context}`,
   const challenges = parseBulletList(challengeBlock.replace(/CHALLENGES:/i, ""));
   const notes = parseBulletList(revisedBlock);
 
+  const snapshotHash = snapshotHashFromBundle(bundle);
   const contradictions: ContradictionRecord[] = challenges.slice(0, 4).map((challenge) => {
+    const challengeEvidence = [
+      buildLlmEvidenceFromBullet({
+        bullet: challenge,
+        model,
+        snapshotHash,
+        pool: bundle.evidencePool,
+        phase: "cross_review",
+      }),
+    ];
     const positionB = {
       model,
       stance: "challenges" as const,
       claim: challenge,
       confidence: "Weakly Inferred" as const,
-      evidenceRefs: [] as string[],
+      evidenceRefs: challengeEvidence.map((e) => e.filePath),
     };
     const positionA = {
       model: "Truth Council",
       stance: "supports" as const,
       claim: `${model} independent assessment`,
       confidence: "Strongly Inferred" as const,
-      evidenceRefs: [] as string[],
+      evidenceRefs: peerNotes[model].evidenceCited.map((e) => e.filePath),
     };
     return {
       id: createId("contradiction"),
@@ -165,6 +193,10 @@ ${context}`,
       suggestedResolution:
         "Preserve LLM disagreement; corroborate with repository evidence before upgrading confidence.",
       positions: [positionA, positionB],
+      evidenceCitedB: challengeEvidence,
+      challengeEvidence,
+      evidenceCitedA: peerNotes[model].evidenceCited.slice(0, 2),
+      claimEvidence: peerNotes[model].evidenceCited.slice(0, 2),
     };
   });
 
@@ -175,7 +207,13 @@ ${context}`,
       bullets,
       confidence: contradictions.length ? "Strongly Inferred" : "Confirmed",
       findingsReviewed: bullets.length,
-      evidenceCited: [],
+      evidenceCited: buildLlmEvidenceCitedFromBullets({
+        bullets,
+        model,
+        snapshotHash,
+        pool: bundle.evidencePool,
+        phase: "cross_review",
+      }),
     },
     contradictions,
   };
@@ -246,6 +284,7 @@ export async function runLlmTruthCouncil(
         const injectedContext = buildModelContext(bundle, model);
         const assessment = await phase1(
           model,
+          bundle,
           context,
           serializeModelContextForLlm(injectedContext),
           injectedContext,
@@ -264,7 +303,7 @@ export async function runLlmTruthCouncil(
   const phase2Results = Object.fromEntries(
     await Promise.all(
       COUNCIL_MODELS.map(async (model) => {
-        const result = await phase2Challenge(model, context, phase1Results);
+        const result = await phase2Challenge(model, bundle, context, phase1Results);
         return [model, result] as const;
       }),
     ),

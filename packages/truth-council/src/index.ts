@@ -1,6 +1,6 @@
 import { buildCouncilEvidenceBundle } from "@codetruth/core";
 import type { ArchitectureGraph, BuildStateScorecard, Finding } from "@codetruth/core";
-import { isLlmEnabled, runLlmTruthCouncil } from "@codetruth/llm";
+import { applyLlmCouncilEvidenceToFindings, isLlmEnabled, runLlmTruthCouncil } from "@codetruth/llm";
 import { applyCouncilFallbackToFindings } from "./fallback.js";
 import { runHeuristicDeliberation } from "./phases.js";
 import { runHeuristicTruthCouncil, type CouncilResult } from "./heuristic.js";
@@ -51,7 +51,11 @@ export async function runTruthCouncil(
         modelNotes: llm.modelNotes,
         phases: llm.phases,
         contradictionRegister: llm.contradictionRegister,
-        adjustedFindings: findings,
+        adjustedFindings: applyLlmCouncilEvidenceToFindings(
+          findings,
+          llm.phases,
+          bundle.evidencePool,
+        ),
         llmPowered: true,
         llmProvider: llm.provider,
         llmModel: llm.model,

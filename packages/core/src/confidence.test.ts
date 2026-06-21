@@ -65,6 +65,27 @@ describe("confidence taxonomy", () => {
         },
       ]),
     ).toBe("Weakly Inferred");
+    expect(
+      inferConfidenceFromEvidence([
+        {
+          snapshotHash: "h",
+          filePath: "repository",
+          extractionMethod: "llm_analysis",
+          rawSnippet: "No CI workflow in .github/workflows",
+        },
+      ]),
+    ).toBe("Weakly Inferred");
+    expect(
+      inferConfidenceFromEvidence([
+        {
+          snapshotHash: "h",
+          filePath: "src/api.ts",
+          lineStart: 10,
+          extractionMethod: "llm_analysis",
+          rawSnippet: "Admin route lacks auth guard",
+        },
+      ]),
+    ).toBe("Strongly Inferred");
   });
 
   it("defines severity minimum confidence thresholds", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createAbsenceEvidence,
   createEvidenceFromSymbol,
+  createLlmAnalysisEvidence,
   enrichEvidenceRecord,
   hasRichSnippet,
   isSubstantiveEvidence,
@@ -50,6 +51,22 @@ describe("evidence factories", () => {
     expect(record.extractionMethod).toBe("absence");
     expect(record.confidenceAtExtraction).toBe("Unknown");
     expect(record.rawSnippet).toContain("Missing tests");
+  });
+
+  it("creates llm_analysis evidence with council metadata", () => {
+    const record = createLlmAnalysisEvidence({
+      snapshotHash: "hash1",
+      model: "Security Model",
+      claim: "src/api.ts exposes admin routes without auth middleware",
+      filePath: "src/api.ts",
+      lineStart: 42,
+      phase: "cross_review",
+    });
+
+    expect(record.extractionMethod).toBe("llm_analysis");
+    expect(record.confidenceAtExtraction).toBe("Strongly Inferred");
+    expect(record.metadata?.councilModel).toBe("Security Model");
+    expect(record.rawSnippet).toContain("admin routes");
   });
 
   it("creates rich evidence from symbols", () => {

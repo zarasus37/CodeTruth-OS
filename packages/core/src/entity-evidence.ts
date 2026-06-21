@@ -2,6 +2,7 @@ export {
   createAbsenceEvidence,
   createEvidenceFromFinding,
   createEvidenceFromSymbol,
+  createLlmAnalysisEvidence,
   enrichEvidenceRecord,
   hasRichSnippet,
   inferBestConfidenceFromEvidence,
