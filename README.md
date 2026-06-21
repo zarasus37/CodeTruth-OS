@@ -186,9 +186,16 @@ Covers: parsers, snapshot diff, compliance evaluation + exports, cognition sched
 ## Repository
 
 ```bash
-git clone https://github.com/criscolon37/CodeTruth-OS.git
+git clone https://github.com/zarasus37/CodeTruth-OS.git
 cd CodeTruth-OS
 npm install && npm run build && npm test
+```
+
+To host under `criscolon37`, create https://github.com/criscolon37/CodeTruth-OS then:
+
+```bash
+git remote add criscolon https://github.com/criscolon37/CodeTruth-OS.git
+git push -u criscolon main
 ```
 
 ## Security notes
