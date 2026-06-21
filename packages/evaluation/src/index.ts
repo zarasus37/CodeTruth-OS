@@ -27,6 +27,17 @@ function makeFinding(input: {
   filePath?: string;
   snapshot: SnapshotRecord;
 }): Finding {
+  const evidenceChain = [
+    {
+      snapshotHash: input.snapshot.hash,
+      filePath: input.filePath ?? "repository",
+      extractionMethod: input.filePath ? ("config_parse" as const) : ("inference" as const),
+      snippet: input.filePath
+        ? `Artifact check: ${input.filePath}`
+        : `Repository scan (${input.snapshot.fileCount} files): ${input.description}`,
+    },
+  ];
+
   return {
     id: createId("find"),
     domain: input.domain,
@@ -35,14 +46,8 @@ function makeFinding(input: {
     title: input.title,
     description: input.description,
     gapCategory: input.gapCategory,
-    evidence: [
-      {
-        snapshotHash: input.snapshot.hash,
-        filePath: input.filePath ?? "repository",
-        extractionMethod: input.filePath ? "config_parse" : "inference",
-        snippet: input.description,
-      },
-    ],
+    evidence: evidenceChain,
+    evidenceChain,
     remediationPath: `Address ${input.title.toLowerCase()} before production deployment.`,
   };
 }

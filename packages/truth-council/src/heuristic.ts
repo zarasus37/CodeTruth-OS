@@ -65,6 +65,7 @@ export function runHeuristicTruthCouncil(
   ) as Record<CouncilModel, string[]>;
 
   const contradictionRegister: ContradictionRecord[] = [];
+
   if (scorecard.overall >= 75 && findings.some((f) => f.severity === "High-risk flaw")) {
     contradictionRegister.push({
       id: createId("contradiction"),
@@ -73,6 +74,27 @@ export function runHeuristicTruthCouncil(
       models: ["Planning Model", "Evaluation Layer"],
       severity: "unresolved",
     });
+  }
+
+  for (const finding of findings) {
+    const chain = finding.evidenceChain?.length ? finding.evidenceChain : finding.evidence;
+    const weakEvidence =
+      !chain?.length ||
+      chain.every((e) => e.extractionMethod === "inference" && !e.lineStart && !e.symbolId);
+    const highSeverity =
+      finding.severity === "Critical blocker" || finding.severity === "High-risk flaw";
+    const overconfident =
+      finding.confidence === "Confirmed" || finding.confidence === "Strongly Inferred";
+
+    if (weakEvidence && highSeverity && overconfident) {
+      contradictionRegister.push({
+        id: createId("contradiction"),
+        claim: `${finding.title} asserted at ${finding.confidence}`,
+        challenge: "Evidence chain is inference-only or absent for a high-severity claim",
+        models: ["Security Model", "Planning Model"],
+        severity: "unresolved",
+      });
+    }
   }
 
   const consensus: ConsensusTruthReport = {

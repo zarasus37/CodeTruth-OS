@@ -12,10 +12,16 @@ import { parseRustFile } from "./rust-parser.js";
 
 export { detectLanguage, detectParserEngine, isSourceFile } from "./languages.js";
 
+export interface ParseFileFailure {
+  path: string;
+  error: string;
+}
+
 export interface ParseResult {
   symbols: SymbolRecord[];
   dependencies: DependencyEdge[];
   parserStats: ParserStats;
+  failedFiles?: ParseFileFailure[];
 }
 
 function parseFile(filePath: string, content: string): {
@@ -51,6 +57,7 @@ export async function parseSnapshotPaths(
   const symbols: SymbolRecord[] = [];
   const dependencies: DependencyEdge[] = [];
   const parserStats = emptyParserStats();
+  const failedFiles: ParseFileFailure[] = [];
 
   for (const entry of snapshot.manifest) {
     if (!paths.has(entry.path)) continue;
@@ -59,12 +66,27 @@ export async function parseSnapshotPaths(
     let content = "";
     try {
       content = await readFile(fullPath, "utf8");
-    } catch {
+    } catch (error) {
       parserStats.skipped += 1;
+      failedFiles.push({
+        path: entry.path,
+        error: error instanceof Error ? error.message : "read failed",
+      });
       continue;
     }
 
-    const parsed = parseFile(entry.path, content);
+    let parsed;
+    try {
+      parsed = parseFile(entry.path, content);
+    } catch (error) {
+      parserStats.skipped += 1;
+      failedFiles.push({
+        path: entry.path,
+        error: error instanceof Error ? error.message : "parse failed",
+      });
+      continue;
+    }
+
     symbols.push(...parsed.symbols);
     dependencies.push(...parsed.dependencies);
     parserStats[parsed.engine] += 1;
@@ -80,7 +102,12 @@ export async function parseSnapshotPaths(
     parserStats.total += 1;
   }
 
-  return { symbols, dependencies, parserStats };
+  return {
+    symbols,
+    dependencies,
+    parserStats,
+    failedFiles: failedFiles.length ? failedFiles : undefined,
+  };
 }
 
 export async function parseSnapshot(snapshot: SnapshotRecord): Promise<ParseResult> {

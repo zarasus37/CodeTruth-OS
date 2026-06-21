@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { createId } from "@codetruth/core";
 import type { Finding, MarketplaceAnalyzerRun, SnapshotRecord } from "@codetruth/core";
+import { marketplaceFinding } from "../finding.js";
 
 const SOLIDITY_PATTERNS: Array<{
   pattern: RegExp;
@@ -54,23 +54,16 @@ export function runSolidityAnalyzer(snapshot: SnapshotRecord): MarketplaceAnalyz
 
     for (const rule of SOLIDITY_PATTERNS) {
       if (!rule.pattern.test(content)) continue;
-      findings.push({
-        id: createId("finding"),
-        domain: "security posture",
-        severity: rule.severity,
-        confidence: "Strongly Inferred",
-        title: rule.title,
-        description: rule.description,
-        evidence: [
-          {
-            snapshotHash: snapshot.hash,
-            filePath: entry.path,
-            extractionMethod: "pattern_match",
-            snippet: content.match(rule.pattern)?.[0]?.slice(0, 120),
-          },
-        ],
-        gapCategory: "secrets management",
-      });
+      findings.push(
+        marketplaceFinding({
+          snapshotHash: snapshot.hash,
+          filePath: entry.path,
+          title: rule.title,
+          description: rule.description,
+          severity: rule.severity,
+          snippet: content.match(rule.pattern)?.[0]?.slice(0, 120),
+        }),
+      );
     }
   }
 

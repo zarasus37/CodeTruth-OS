@@ -6,6 +6,10 @@ import {
   evaluateProjectCompliance,
 } from "./evaluate.js";
 
+const authEvidence = [
+  { snapshotHash: "h", filePath: "src/api.ts", extractionMethod: "AST" as const },
+];
+
 const authFinding: Finding = {
   id: "finding_auth",
   domain: "security posture",
@@ -13,7 +17,8 @@ const authFinding: Finding = {
   confidence: "Confirmed",
   title: "Missing authentication middleware",
   description: "Routes are exposed without auth checks.",
-  evidence: [],
+  evidence: authEvidence,
+  evidenceChain: authEvidence,
   gapCategory: "authentication system",
 };
 

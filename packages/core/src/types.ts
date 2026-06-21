@@ -374,6 +374,11 @@ export interface PipelineStreamEvent {
     incrementalSavingsPercent?: number;
     llmPowered?: boolean;
     marketplaceAnalyzers?: string[];
+    stageState?: PipelineEntityState;
+    failedFiles?: number;
+    stageFailures?: number;
+    confidenceSummary?: Partial<Record<ConfidenceLevel, number>>;
+    evidenceCorrected?: number;
   };
 }
 
@@ -411,6 +416,37 @@ export interface DomainScore {
   rationale: string;
 }
 
+export type PipelineEntityState =
+  | "pending"
+  | "running"
+  | "completed"
+  | "degraded"
+  | "failed"
+  | "skipped";
+
+export interface PipelineStageRecord {
+  stage: AnalysisStage;
+  state: PipelineEntityState;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface PipelineStageFailure {
+  stage: AnalysisStage;
+  scope: "stage" | "file" | "analyzer";
+  target?: string;
+  message: string;
+  degraded: boolean;
+}
+
+export interface PipelineDiagnostics {
+  stages: PipelineStageRecord[];
+  failures: PipelineStageFailure[];
+  confidenceSummary: Partial<Record<ConfidenceLevel, number>>;
+  evidenceViolationsCorrected: number;
+}
+
 export interface Finding {
   id: string;
   domain: ScoringDomain;
@@ -419,6 +455,8 @@ export interface Finding {
   title: string;
   description: string;
   evidence: EvidenceRecord[];
+  /** Pipeline-enforced chain (≥1 link, each with path + extraction method). */
+  evidenceChain: EvidenceRecord[];
   remediationPath?: string;
   gapCategory?: GapCategory;
   contradicted?: boolean;
@@ -523,6 +561,7 @@ export interface PipelineArtifacts {
   llmCouncilMeta?: LlmCouncilRunMeta;
   incrementalMetrics?: IncrementalComputeMetrics;
   marketplaceResults?: MarketplaceAnalyzerRun[];
+  diagnostics?: PipelineDiagnostics;
 }
 
 export type FindingReviewStatus = "pending" | "accepted" | "rejected" | "deferred";

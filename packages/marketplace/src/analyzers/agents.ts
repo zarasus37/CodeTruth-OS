@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { createId } from "@codetruth/core";
 import type { Finding, MarketplaceAnalyzerRun, SnapshotRecord } from "@codetruth/core";
+import { marketplaceFinding } from "../finding.js";
 
 const AGENT_PATTERNS: Array<{
   pattern: RegExp;
@@ -61,23 +61,17 @@ export function runAgentsAnalyzer(snapshot: SnapshotRecord): MarketplaceAnalyzer
 
     for (const rule of AGENT_PATTERNS) {
       if (!rule.pattern.test(content)) continue;
-      findings.push({
-        id: createId("finding"),
-        domain: "security posture",
-        severity: rule.severity,
-        confidence: "Strongly Inferred",
-        title: rule.title,
-        description: rule.description,
-        evidence: [
-          {
-            snapshotHash: snapshot.hash,
-            filePath: relativePath,
-            extractionMethod: "pattern_match",
-            snippet: content.match(rule.pattern)?.[0]?.slice(0, 120),
-          },
-        ],
-        gapCategory: "authentication system",
-      });
+      findings.push(
+        marketplaceFinding({
+          snapshotHash: snapshot.hash,
+          filePath: relativePath,
+          title: rule.title,
+          description: rule.description,
+          severity: rule.severity,
+          snippet: content.match(rule.pattern)?.[0]?.slice(0, 120),
+          gapCategory: "authentication system",
+        }),
+      );
     }
   }
 

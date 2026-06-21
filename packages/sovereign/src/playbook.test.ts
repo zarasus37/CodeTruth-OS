@@ -24,6 +24,7 @@ const baseArtifacts = {
       title: "Missing auth on admin route",
       description: "Admin endpoints lack authentication.",
       evidence: [{ snapshotHash: "h", filePath: "src/admin.ts", extractionMethod: "AST" as const }],
+      evidenceChain: [{ snapshotHash: "h", filePath: "src/admin.ts", extractionMethod: "AST" as const }],
     },
   ],
 } as unknown as PipelineArtifacts;

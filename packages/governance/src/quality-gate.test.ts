@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { evaluateQualityGate, parseBlockSeverities } from "./quality-gate.js";
 
+const testEvidence = [
+  { snapshotHash: "h", filePath: "src/api.ts", extractionMethod: "AST" as const },
+];
+
 const finding = (id: string, severity: "Critical blocker" | "High-risk flaw" | "Low-priority debt") => ({
   id,
   title: `Finding ${id}`,
@@ -8,7 +12,8 @@ const finding = (id: string, severity: "Critical blocker" | "High-risk flaw" | "
   confidence: "Confirmed" as const,
   domain: "security posture" as const,
   description: "test",
-  evidence: [],
+  evidence: testEvidence,
+  evidenceChain: testEvidence,
 });
 
 describe("evaluateQualityGate", () => {

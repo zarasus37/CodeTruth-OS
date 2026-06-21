@@ -16,4 +16,38 @@ describe("runHeuristicTruthCouncil", () => {
     expect(result.phases).toHaveLength(3);
     expect(result.llmPowered).toBe(false);
   });
+
+  it("flags overconfident high-severity findings with weak evidence", () => {
+    const chain = [
+      {
+        snapshotHash: "h",
+        filePath: "repository",
+        extractionMethod: "inference" as const,
+      },
+    ];
+    const result = runHeuristicTruthCouncil(
+      {
+        overall: 60,
+        maturityStage: "developing",
+        domains: [],
+      },
+      [
+        {
+          id: "f1",
+          domain: "security posture",
+          severity: "Critical blocker",
+          confidence: "Confirmed",
+          title: "Admin route exposed",
+          description: "No auth on admin endpoints.",
+          evidence: chain,
+          evidenceChain: chain,
+        },
+      ],
+      { services: [], modules: [], edges: [] },
+    );
+    expect(result.contradictionRegister.length).toBeGreaterThan(0);
+    expect(result.contradictionRegister.some((c) => c.claim.includes("Admin route exposed"))).toBe(
+      true,
+    );
+  });
 });

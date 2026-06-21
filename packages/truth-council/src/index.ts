@@ -2,7 +2,11 @@ import type { ArchitectureGraph, BuildStateScorecard, Finding } from "@codetruth
 import { isLlmEnabled, runLlmTruthCouncil } from "@codetruth/llm";
 import { runHeuristicTruthCouncil, type CouncilResult } from "./heuristic.js";
 
-export { COUNCIL_MODELS, type CouncilModel } from "./heuristic.js";
+export {
+  COUNCIL_MODELS,
+  runHeuristicTruthCouncil,
+  type CouncilModel,
+} from "./heuristic.js";
 export type { CouncilResult };
 
 export interface CouncilRunOptions {

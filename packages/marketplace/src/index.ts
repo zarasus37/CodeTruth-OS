@@ -23,7 +23,20 @@ export function runMarketplaceAnalyzers(
     const definition = getMarketplaceAnalyzer(analyzerId);
     const runner = RUNNERS[analyzerId];
     if (!definition || !runner) continue;
-    runs.push(runner(snapshot));
+    try {
+      runs.push(runner(snapshot));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "analyzer failed";
+      runs.push({
+        analyzerId,
+        analyzerName: definition.name,
+        category: definition.category,
+        version: definition.version,
+        findings: [],
+        summary: `Degraded: ${message}`,
+        durationMs: 0,
+      });
+    }
   }
 
   return runs;
