@@ -1,13 +1,22 @@
-import { createId } from "@codetruth/core";
+import { createId, createEvidenceFromSymbol, enrichEvidenceRecord } from "@codetruth/core";
 import type {
   ArchitectureGraph,
   BuildStateScorecard,
+  DependencyEdge,
+  EvidenceRecord,
   Finding,
   GapCategory,
   ScoringDomain,
   SeverityLevel,
   SnapshotRecord,
+  SymbolRecord,
 } from "@codetruth/core";
+
+export interface EvaluationContext {
+  symbols?: SymbolRecord[];
+  dependencies?: DependencyEdge[];
+  parseEvidence?: EvidenceRecord[];
+}
 
 export interface EvaluationResult {
   scorecard: BuildStateScorecard;
@@ -18,6 +27,16 @@ function hasPath(snapshot: SnapshotRecord, matcher: (path: string) => boolean): 
   return snapshot.manifest.some((entry) => matcher(entry.path.replace(/\\/g, "/")));
 }
 
+function symbolsMatching(
+  symbols: SymbolRecord[] | undefined,
+  pattern: RegExp,
+): SymbolRecord[] {
+  if (!symbols?.length) return [];
+  return symbols.filter(
+    (s) => pattern.test(s.filePath) || pattern.test(s.name) || pattern.test(`${s.kind}`),
+  );
+}
+
 function makeFinding(input: {
   domain: ScoringDomain;
   severity: SeverityLevel;
@@ -26,23 +45,56 @@ function makeFinding(input: {
   gapCategory?: GapCategory;
   filePath?: string;
   snapshot: SnapshotRecord;
+  context?: EvaluationContext;
+  symbolPattern?: RegExp;
 }): Finding {
-  const evidenceChain = [
-    {
+  const relatedSymbols = input.symbolPattern
+    ? symbolsMatching(input.context?.symbols, input.symbolPattern)
+    : [];
+
+  const parseFileEvidence =
+    input.filePath && input.context?.parseEvidence
+      ? input.context.parseEvidence.filter((e) => e.filePath === input.filePath).slice(0, 2)
+      : [];
+
+  const symbolEvidence = relatedSymbols
+    .slice(0, 2)
+    .map((symbol) => createEvidenceFromSymbol(symbol, input.snapshot.hash));
+
+  const absenceChain = [
+    enrichEvidenceRecord({
       snapshotHash: input.snapshot.hash,
       filePath: input.filePath ?? "repository",
-      extractionMethod: input.filePath ? ("config_parse" as const) : ("inference" as const),
+      extractionMethod: input.filePath ? "config_parse" : "inference",
+      rawSnippet: input.filePath
+        ? `Artifact check: ${input.filePath}`
+        : `Repository scan (${input.snapshot.fileCount} files): ${input.description}`,
       snippet: input.filePath
         ? `Artifact check: ${input.filePath}`
         : `Repository scan (${input.snapshot.fileCount} files): ${input.description}`,
-    },
+      confidenceAtExtraction: input.filePath ? "Confirmed" : "Strongly Inferred",
+    }),
   ];
+
+  const evidenceChain =
+    symbolEvidence.length > 0
+      ? symbolEvidence
+      : parseFileEvidence.length > 0
+        ? parseFileEvidence
+        : absenceChain;
+
+  const confidence =
+    symbolEvidence.length > 0
+      ? symbolEvidence[0]!.confidenceAtExtraction ?? "Strongly Inferred"
+      : input.filePath
+        ? "Confirmed"
+        : "Strongly Inferred";
 
   return {
     id: createId("find"),
     domain: input.domain,
     severity: input.severity,
-    confidence: input.filePath ? "Confirmed" : "Strongly Inferred",
+    confidence,
     title: input.title,
     description: input.description,
     gapCategory: input.gapCategory,
@@ -61,17 +113,22 @@ function scoreDomain(present: boolean, partial = false): number {
 export function evaluateProject(
   snapshot: SnapshotRecord,
   architecture: ArchitectureGraph,
+  context: EvaluationContext = {},
 ): EvaluationResult {
   const findings: Finding[] = [];
   const paths = snapshot.manifest.map((entry) => entry.path.replace(/\\/g, "/"));
 
   const hasPackageJson = paths.includes("package.json");
   const hasReadme = paths.some((p) => /^readme(\.|$)/i.test(p.split("/").pop() ?? ""));
-  const hasTests = paths.some((p) => /(test|spec)\.(ts|js|tsx|jsx|py)$/i.test(p));
+  const hasTests =
+    paths.some((p) => /(test|spec)\.(ts|js|tsx|jsx|py)$/i.test(p)) ||
+    symbolsMatching(context.symbols, /test|spec/i).length > 0;
   const hasCi = paths.some((p) => p.startsWith(".github/workflows/"));
   const hasDocker = paths.some((p) => p.toLowerCase().includes("dockerfile") || p.endsWith("docker-compose.yml"));
   const hasEnvExample = paths.some((p) => p === ".env.example" || p.endsWith("/.env.example"));
-  const hasAuthHints = paths.some((p) => /auth|jwt|session|oauth/i.test(p));
+  const hasAuthHints =
+    paths.some((p) => /auth|jwt|session|oauth/i.test(p)) ||
+    symbolsMatching(context.symbols, /auth|jwt|session|oauth/i).length > 0;
   const hasMonitoringHints = paths.some((p) => /sentry|datadog|prometheus|opentelemetry/i.test(p));
   const hasHealthHints = paths.some((p) => /health|ready|live/i.test(p));
   const hasMigrations = paths.some((p) => /migration|alembic|prisma\/schema/i.test(p));
@@ -85,6 +142,7 @@ export function evaluateProject(
         description: "No GitHub Actions or equivalent CI workflow detected.",
         gapCategory: "CI/CD pipeline",
         snapshot,
+        context,
       }),
     );
   }
@@ -98,6 +156,8 @@ export function evaluateProject(
         description: "No .env.example or documented environment template found.",
         gapCategory: "environment configuration",
         snapshot,
+        context,
+        filePath: ".env.example",
       }),
     );
   }
@@ -111,6 +171,8 @@ export function evaluateProject(
         description: "No test or spec files were found in the repository.",
         gapCategory: "test layers",
         snapshot,
+        context,
+        symbolPattern: /test|spec/i,
       }),
     );
   }
@@ -124,6 +186,7 @@ export function evaluateProject(
         description: "No README file detected for onboarding and operational context.",
         gapCategory: "documentation surfaces",
         snapshot,
+        context,
       }),
     );
   }
@@ -137,6 +200,8 @@ export function evaluateProject(
         description: "No auth-related modules or configuration were detected.",
         gapCategory: "authentication system",
         snapshot,
+        context,
+        symbolPattern: /auth|jwt|session|oauth/i,
       }),
     );
   }
@@ -150,6 +215,7 @@ export function evaluateProject(
         description: "No monitoring, tracing, or error tracking integration detected.",
         gapCategory: "monitoring and alerting",
         snapshot,
+        context,
       }),
     );
   }
@@ -163,6 +229,8 @@ export function evaluateProject(
         description: "No explicit health/readiness endpoint patterns found.",
         gapCategory: "health checks",
         snapshot,
+        context,
+        symbolPattern: /health|ready|live/i,
       }),
     );
   }
@@ -176,16 +244,18 @@ export function evaluateProject(
         description: "Data layer detected without clear migration management artifacts.",
         gapCategory: "migration management",
         snapshot,
+        context,
       }),
     );
   }
 
+  const symbolBackedDomains = context.symbols?.length ?? 0;
   const domains = [
     {
       domain: "code structure" as ScoringDomain,
       score: Math.min(95, 50 + architecture.modules.length * 4 + architecture.services.length * 5),
-      confidence: "Strongly Inferred" as const,
-      rationale: `${architecture.modules.length} modules and ${architecture.services.length} services inferred.`,
+      confidence: symbolBackedDomains > 0 ? ("Confirmed" as const) : ("Strongly Inferred" as const),
+      rationale: `${architecture.modules.length} modules and ${architecture.services.length} services inferred (${symbolBackedDomains} parse-backed symbols).`,
     },
     {
       domain: "build readiness" as ScoringDomain,
@@ -208,8 +278,8 @@ export function evaluateProject(
     {
       domain: "security posture" as ScoringDomain,
       score: scoreDomain(hasAuthHints),
-      confidence: "Weakly Inferred" as const,
-      rationale: "Security posture inferred from auth-related artifacts.",
+      confidence: hasAuthHints ? "Strongly Inferred" as const : "Weakly Inferred" as const,
+      rationale: "Security posture inferred from auth-related artifacts and symbols.",
     },
     {
       domain: "DevOps maturity" as ScoringDomain,
@@ -237,14 +307,13 @@ export function evaluateProject(
     },
     {
       domain: "integration health" as ScoringDomain,
-      score: scoreDomain(architecture.edges.length > 0),
-      confidence: "Strongly Inferred" as const,
-      rationale: `${architecture.edges.length} dependency relationships mapped.`,
+      score: scoreDomain((context.dependencies?.length ?? architecture.edges.length) > 0),
+      confidence: (context.dependencies?.length ?? 0) > 0 ? "Confirmed" as const : "Strongly Inferred" as const,
+      rationale: `${context.dependencies?.length ?? architecture.edges.length} dependency relationships mapped.`,
     },
   ];
 
   const overall = Math.round(domains.reduce((sum, item) => sum + item.score, 0) / domains.length);
-  const criticalCount = findings.filter((finding) => finding.severity === "Critical blocker").length;
   const highCount = findings.filter((finding) => finding.severity === "High-risk flaw").length;
 
   const maturityStage =

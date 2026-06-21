@@ -1,4 +1,4 @@
-import type { ConfidenceLevel, EvidenceRecord } from "./types.js";
+import type { ConfidenceLevel, EvidenceRecord, SeverityLevel } from "./types.js";
 
 /** Five-tier confidence taxonomy — enforced at pipeline gate. */
 export const CONFIDENCE_LEVELS = [
@@ -44,21 +44,38 @@ export function mergeConfidence(a: ConfidenceLevel, b: ConfidenceLevel): Confide
   return confidenceRank(a) <= confidenceRank(b) ? a : b;
 }
 
+/** Minimum confidence required to support a given severity tier. */
+export function minimumConfidenceForSeverity(severity: SeverityLevel): ConfidenceLevel {
+  if (severity === "Critical blocker" || severity === "High-risk flaw") {
+    return "Strongly Inferred";
+  }
+  return "Weakly Inferred";
+}
+
 /** Derive confidence from evidence chain strength (AST/config > pattern > inference-only). */
 export function inferConfidenceFromEvidence(evidence: EvidenceRecord[]): ConfidenceLevel {
   if (!evidence.length) return "Unknown";
 
   const methods = new Set(evidence.map((e) => e.extractionMethod));
   const hasLine = evidence.some((e) => e.lineStart != null || e.lineEnd != null);
-  const hasSymbol = evidence.some((e) => e.symbolId);
-  const hasSnippet = evidence.some((e) => e.snippet && e.snippet.length > 8);
+  const hasSymbol = evidence.some((e) => e.symbolId || e.symbolName);
+  const hasSnippet = evidence.some(
+    (e) => (e.rawSnippet && e.rawSnippet.length > 8) || (e.snippet && e.snippet.length > 8),
+  );
 
-  if (methods.has("AST") && (hasLine || hasSymbol)) return "Confirmed";
-  if (methods.has("config_parse") && hasSnippet) return "Confirmed";
-  if (methods.has("pattern_match") && hasLine) return "Strongly Inferred";
-  if (methods.has("pattern_match")) return "Weakly Inferred";
-  if (methods.has("inference")) return "Weakly Inferred";
-  return "Unknown";
+  let structural: ConfidenceLevel = "Unknown";
+  if (methods.has("AST") && (hasLine || hasSymbol)) structural = "Confirmed";
+  else if (methods.has("config_parse") && hasSnippet) structural = "Confirmed";
+  else if (methods.has("pattern_match") && hasLine) structural = "Strongly Inferred";
+  else if (methods.has("pattern_match")) structural = "Weakly Inferred";
+  else if (methods.has("inference")) structural = "Weakly Inferred";
+
+  const extractionLevels = evidence
+    .map((e) => e.confidenceAtExtraction)
+    .filter((level): level is ConfidenceLevel => level != null);
+
+  if (!extractionLevels.length) return structural;
+  return extractionLevels.reduce((acc, level) => mergeConfidence(acc, level), structural);
 }
 
 const DESCENDING_LEVELS: ConfidenceLevel[] = [

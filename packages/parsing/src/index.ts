@@ -1,6 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { DependencyEdge, ParserStats, SnapshotRecord, SymbolRecord } from "@codetruth/core";
+import type {
+  DependencyEdge,
+  ParseEvidenceLedger,
+  ParserStats,
+  SnapshotRecord,
+  SymbolRecord,
+} from "@codetruth/core";
 import { parseWithBabel } from "./babel-parser.js";
 import { parseCSharpFile } from "./csharp-parser.js";
 import { type ParseEvidenceContext } from "./evidence.js";
@@ -10,10 +16,12 @@ import { detectParserEngine, emptyParserStats, isSourceFile } from "./languages.
 import { parsePythonFile } from "./python-parser.js";
 import { parseRubyFile } from "./ruby-parser.js";
 import { parseRustFile } from "./rust-parser.js";
+import { buildEvidenceFromParseResult } from "./parse-evidence.js";
 import { linkImportSymbols, resolveCrossFileDependencies } from "./resolve.js";
 
 export { detectLanguage, detectParserEngine, isSourceFile } from "./languages.js";
 export { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
+export { buildEvidenceFromParseResult } from "./parse-evidence.js";
 
 export interface ParseFileFailure {
   path: string;
@@ -25,6 +33,7 @@ export interface ParseResult {
   dependencies: DependencyEdge[];
   parserStats: ParserStats;
   failedFiles?: ParseFileFailure[];
+  evidenceLedger?: ParseEvidenceLedger;
 }
 
 function buildEvidenceContext(snapshot: SnapshotRecord, engine: string): ParseEvidenceContext {
@@ -133,6 +142,11 @@ export async function parseSnapshotPaths(
     dependencies: finalized.dependencies,
     parserStats,
     failedFiles: failedFiles.length ? failedFiles : undefined,
+    evidenceLedger: buildEvidenceFromParseResult({
+      snapshotHash: snapshot.hash,
+      symbols: finalized.symbols,
+      dependencies: finalized.dependencies,
+    }),
   };
 }
 

@@ -9,7 +9,12 @@ import type {
 } from "@codetruth/core";
 import { evaluateProject } from "@codetruth/evaluation";
 import { diffSnapshots } from "@codetruth/ingestion";
-import { countSourceFiles, parseSnapshot, parseSnapshotPaths } from "@codetruth/parsing";
+import {
+  buildEvidenceFromParseResult,
+  countSourceFiles,
+  parseSnapshot,
+  parseSnapshotPaths,
+} from "@codetruth/parsing";
 import { buildRoadmap } from "@codetruth/planning";
 import { reconstructArchitecture } from "@codetruth/reconstruction";
 import { applySpatialDiffOverlay, buildSpatialGraph } from "@codetruth/spatial";
@@ -47,7 +52,12 @@ export interface RunPipelineOptions {
 }
 
 export { PipelineError } from "./errors.js";
-export { enforceFindingEvidence, normalizeFindingsForCouncil } from "./evidence.js";
+export {
+  createEvidenceFromFinding,
+  createEvidenceFromSymbol,
+  enforceFindingEvidence,
+  normalizeFindingsForCouncil,
+} from "./evidence.js";
 
 export async function runPipeline(
   snapshot: SnapshotRecord,
@@ -205,7 +215,16 @@ export async function runPipeline(
     diagnostics,
     "evaluation",
     async () => {
-      const result = evaluateProject(snapshot, architecture);
+      const parseEvidenceLedger = buildEvidenceFromParseResult({
+        snapshotHash: snapshot.hash,
+        symbols,
+        dependencies,
+      });
+      const result = evaluateProject(snapshot, architecture, {
+        symbols,
+        dependencies,
+        parseEvidence: parseEvidenceLedger.records,
+      });
       let mergedFindings = result.findings;
       let marketplaceResults: Awaited<ReturnType<typeof runMarketplaceAnalyzers>> | undefined;
 
@@ -250,9 +269,10 @@ export async function runPipeline(
 
   let { scorecard, findings, marketplaceResults } = evaluationOutcome;
 
-  const normalized = normalizeFindingsForCouncil(findings, snapshot);
+  const normalized = normalizeFindingsForCouncil(findings, snapshot, symbols);
   findings = normalized.findings;
   diagnostics.evidenceViolationsCorrected = normalized.corrected;
+  diagnostics.weakEvidenceFlags = normalized.flagged;
   diagnostics.confidenceSummary = buildConfidenceSummary(findings);
 
   let spatialGraph = buildSpatialGraph({
@@ -291,6 +311,7 @@ export async function runPipeline(
     findingCount: findings.length,
     confidenceSummary: diagnostics.confidenceSummary,
     evidenceCorrected: diagnostics.evidenceViolationsCorrected,
+    weakEvidenceFlags: diagnostics.weakEvidenceFlags,
   });
 
   const council = await runIsolatedStage(

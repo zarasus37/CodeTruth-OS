@@ -40,14 +40,18 @@ function buildEvidence(input: {
   symbolId?: string;
   snippet?: string;
 }): EvidenceRecord[] {
+  const rawSnippet = input.snippet ?? "";
+  const confidenceAtExtraction = confidenceForSymbol(input.ctx.engine);
   const record: EvidenceRecord = {
     snapshotHash: input.ctx.snapshotHash,
     filePath: input.filePath,
     lineStart: input.lineStart,
     lineEnd: input.lineEnd,
     symbolId: input.symbolId,
-    snippet: input.snippet?.slice(0, 240),
+    rawSnippet,
+    snippet: rawSnippet.slice(0, 240),
     extractionMethod: extractionMethod(input.ctx.engine),
+    confidenceAtExtraction,
   };
   return [record];
 }
@@ -71,7 +75,7 @@ export function makeSymbol(input: {
     lineEnd: input.lineEnd,
     symbolId: id,
     snippet: input.snippet ?? `${input.kind} ${input.name}`,
-  });
+  }).map((record) => ({ ...record, symbolName: input.name }));
 
   return {
     id,
@@ -98,6 +102,7 @@ export function makeDependency(input: {
   resolvedTo?: string;
   snippet?: string;
 }): DependencyEdge {
+  const depConfidence = confidenceForDependency(input.kind, input.resolvedTo, input.ctx.engine);
   const chain = buildEvidence({
     ctx: input.ctx,
     filePath: input.from,
@@ -105,7 +110,7 @@ export function makeDependency(input: {
     snippet:
       input.snippet ??
       `${input.kind} ${input.to}${input.resolvedTo ? ` → ${input.resolvedTo}` : ""}`,
-  });
+  }).map((record) => ({ ...record, confidenceAtExtraction: depConfidence }));
 
   return {
     from: input.from,

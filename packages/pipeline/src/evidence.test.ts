@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Finding, SnapshotRecord } from "@codetruth/core";
-import { enforceFindingEvidence, normalizeFindingsForCouncil } from "./evidence.js";
+import type { SymbolRecord } from "@codetruth/core";
+import {
+  createEvidenceFromSymbol,
+  enforceFindingEvidence,
+  normalizeFindingsForCouncil,
+} from "./evidence.js";
 
 const snapshot: SnapshotRecord = {
   id: "snap_1",
@@ -84,6 +89,42 @@ describe("enforceFindingEvidence", () => {
   });
 });
 
+describe("createEvidenceFromSymbol", () => {
+  it("maps symbol fields into enriched evidence records", () => {
+    const symbol: SymbolRecord = {
+      id: "sym_1",
+      name: "login",
+      kind: "function",
+      filePath: "src/auth.ts",
+      line: 8,
+      lineEnd: 20,
+      confidence: "Confirmed",
+      evidence: [
+        {
+          snapshotHash: snapshot.hash,
+          filePath: "src/auth.ts",
+          lineStart: 8,
+          extractionMethod: "AST",
+          snippet: "function login()",
+        },
+      ],
+      evidenceChain: [
+        {
+          snapshotHash: snapshot.hash,
+          filePath: "src/auth.ts",
+          lineStart: 8,
+          extractionMethod: "AST",
+          snippet: "function login()",
+        },
+      ],
+    };
+    const record = createEvidenceFromSymbol(symbol, snapshot.hash);
+    expect(record.symbolName).toBe("login");
+    expect(record.rawSnippet).toContain("login");
+    expect(record.confidenceAtExtraction).toBe("Confirmed");
+  });
+});
+
 describe("normalizeFindingsForCouncil", () => {
   it("normalizes all findings and counts corrections", () => {
     const { findings, corrected } = normalizeFindingsForCouncil(
@@ -93,5 +134,27 @@ describe("normalizeFindingsForCouncil", () => {
     expect(findings).toHaveLength(2);
     expect(findings.every((f) => f.evidenceChain.length >= 1)).toBe(true);
     expect(corrected).toBe(2);
+  });
+
+  it("flags Critical/High findings with weak evidence", () => {
+    const { findings, flagged } = normalizeFindingsForCouncil(
+      [
+        bareFinding({
+          severity: "Critical blocker",
+          confidence: "Weakly Inferred",
+          evidence: [
+            {
+              snapshotHash: snapshot.hash,
+              filePath: "repository",
+              extractionMethod: "inference",
+            },
+          ],
+        }),
+      ],
+      snapshot,
+    );
+    expect(flagged).toBe(1);
+    expect(findings[0]?.flaggedForWeakEvidence).toBe(true);
+    expect(findings[0]?.evidenceChain[0]?.confidenceAtExtraction).toBeDefined();
   });
 });

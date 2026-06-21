@@ -6,6 +6,7 @@ import {
   confidenceMeetsMinimum,
   downgradeConfidence,
   mergeConfidence,
+  minimumConfidenceForSeverity,
   inferConfidenceFromEvidence,
   isConfidenceLevel,
 } from "./confidence.js";
@@ -64,6 +65,11 @@ describe("confidence taxonomy", () => {
         },
       ]),
     ).toBe("Weakly Inferred");
+  });
+
+  it("defines severity minimum confidence thresholds", () => {
+    expect(minimumConfidenceForSeverity("Critical blocker")).toBe("Strongly Inferred");
+    expect(minimumConfidenceForSeverity("Low-priority debt")).toBe("Weakly Inferred");
   });
 
   it("merges confidence conservatively", () => {

@@ -64,8 +64,22 @@ export interface EvidenceRecord {
   lineStart?: number;
   lineEnd?: number;
   symbolId?: string;
+  symbolName?: string;
+  /** Truncated display snippet (≤500 chars). */
   snippet?: string;
+  /** Verbatim source excerpt at extraction time. */
+  rawSnippet?: string;
   extractionMethod: "AST" | "pattern_match" | "inference" | "config_parse";
+  /** Confidence tier assigned when this evidence link was created. */
+  confidenceAtExtraction?: ConfidenceLevel;
+}
+
+/** Aggregated parse-layer evidence for upstream evaluation and pipeline gates. */
+export interface ParseEvidenceLedger {
+  records: EvidenceRecord[];
+  byFile: Record<string, EvidenceRecord[]>;
+  symbolCount: number;
+  dependencyCount: number;
 }
 
 export interface FileManifestEntry {
@@ -380,6 +394,7 @@ export interface PipelineStreamEvent {
     stageFailures?: number;
     confidenceSummary?: Partial<Record<ConfidenceLevel, number>>;
     evidenceCorrected?: number;
+    weakEvidenceFlags?: number;
   };
 }
 
@@ -460,6 +475,8 @@ export interface PipelineDiagnostics {
   failures: PipelineStageFailure[];
   confidenceSummary: Partial<Record<ConfidenceLevel, number>>;
   evidenceViolationsCorrected: number;
+  /** Critical/High findings flagged for weak evidence confidence. */
+  weakEvidenceFlags?: number;
 }
 
 export interface Finding {
@@ -475,6 +492,8 @@ export interface Finding {
   remediationPath?: string;
   gapCategory?: GapCategory;
   contradicted?: boolean;
+  /** Set when Critical/High severity lacks minimum confidence support. */
+  flaggedForWeakEvidence?: boolean;
 }
 
 export interface BuildStateScorecard {
