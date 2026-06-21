@@ -58,6 +58,27 @@ export function endLineOf(node: SyntaxNode): number {
   return node.endPosition.row + 1;
 }
 
+/** Verbatim source text for a tree-sitter node (preferred for rawSnippet). */
+export function nodeSnippet(node: SyntaxNode, maxLength = 1200): string {
+  const text = node.text?.trim() ?? "";
+  if (!text) return "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+/** Slice source lines when only line numbers are available (pattern fallback). */
+export function sliceSourceLines(
+  content: string,
+  lineStart: number,
+  lineEnd?: number,
+  maxLength = 1200,
+): string {
+  const lines = content.split(/\r?\n/);
+  const start = Math.max(0, lineStart - 1);
+  const end = lineEnd != null ? Math.min(lines.length, lineEnd) : start + 1;
+  const text = lines.slice(start, end).join("\n").trim();
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
 export function walkTree(node: SyntaxNode, visit: (node: SyntaxNode) => void): void {
   visit(node);
   for (let i = 0; i < node.namedChildCount; i++) {

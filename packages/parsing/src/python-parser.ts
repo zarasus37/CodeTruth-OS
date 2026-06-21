@@ -1,6 +1,14 @@
 import type { DependencyEdge, SymbolRecord } from "@codetruth/core";
 import { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
-import { endLineOf, lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
+import {
+  endLineOf,
+  lineOf,
+  nodeName,
+  nodeSnippet,
+  parseTree,
+  sliceSourceLines,
+  walkTree,
+} from "./tree-sitter-runtime.js";
 
 function parsePythonPattern(
   filePath: string,
@@ -25,7 +33,7 @@ function parsePythonPattern(
           kind: "function",
           filePath,
           line: lineNo,
-          snippet: line.trim(),
+          snippet: sliceSourceLines(content, lineNo, lineNo),
         }),
       );
     }
@@ -39,7 +47,7 @@ function parsePythonPattern(
           kind: "class",
           filePath,
           line: lineNo,
-          snippet: line.trim(),
+          snippet: sliceSourceLines(content, lineNo, lineNo),
         }),
       );
     }
@@ -55,6 +63,7 @@ function parsePythonPattern(
             to: root,
             kind: "imports",
             line: lineNo,
+            snippet: sliceSourceLines(content, lineNo, lineNo),
           }),
         );
         symbols.push(
@@ -64,6 +73,7 @@ function parsePythonPattern(
             kind: "import",
             filePath,
             line: lineNo,
+            snippet: sliceSourceLines(content, lineNo, lineNo),
           }),
         );
       }
@@ -71,6 +81,7 @@ function parsePythonPattern(
 
     const fromMatch = line.match(/^\s*from\s+([A-Za-z0-9_.]+)\s+import\s+/);
     if (fromMatch?.[1]) {
+      const snippet = sliceSourceLines(content, lineNo, lineNo);
       dependencies.push(
         makeDependency({
           ctx: patternCtx,
@@ -78,6 +89,7 @@ function parsePythonPattern(
           to: fromMatch[1],
           kind: "imports",
           line: lineNo,
+          snippet,
         }),
       );
       symbols.push(
@@ -87,6 +99,7 @@ function parsePythonPattern(
           kind: "import",
           filePath,
           line: lineNo,
+          snippet,
         }),
       );
     }
@@ -118,6 +131,7 @@ export function parsePythonFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -134,6 +148,7 @@ export function parsePythonFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -143,6 +158,7 @@ export function parsePythonFile(
       const nameNode = node.namedChild(0);
       const moduleName = nameNode?.text?.split(".")[0];
       if (moduleName) {
+        const snippet = nodeSnippet(node);
         dependencies.push(
           makeDependency({
             ctx: treeCtx,
@@ -150,6 +166,7 @@ export function parsePythonFile(
             to: moduleName,
             kind: "imports",
             line: lineOf(node),
+            snippet,
           }),
         );
         symbols.push(
@@ -159,6 +176,7 @@ export function parsePythonFile(
             kind: "import",
             filePath,
             line: lineOf(node),
+            snippet,
           }),
         );
       }
@@ -168,6 +186,7 @@ export function parsePythonFile(
       const moduleNode = node.childForFieldName("module_name");
       const moduleName = moduleNode?.text;
       if (moduleName) {
+        const snippet = nodeSnippet(node);
         dependencies.push(
           makeDependency({
             ctx: treeCtx,
@@ -175,6 +194,7 @@ export function parsePythonFile(
             to: moduleName,
             kind: "imports",
             line: lineOf(node),
+            snippet,
           }),
         );
         symbols.push(
@@ -184,6 +204,7 @@ export function parsePythonFile(
             kind: "import",
             filePath,
             line: lineOf(node),
+            snippet,
           }),
         );
       }

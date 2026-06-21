@@ -1,6 +1,13 @@
 import type { DependencyEdge, SymbolRecord } from "@codetruth/core";
 import { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
-import { endLineOf, lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
+import {
+  endLineOf,
+  lineOf,
+  nodeName,
+  nodeSnippet,
+  parseTree,
+  walkTree,
+} from "./tree-sitter-runtime.js";
 
 export function parseGoFile(
   filePath: string,
@@ -25,6 +32,7 @@ export function parseGoFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -46,6 +54,7 @@ export function parseGoFile(
             filePath,
             line: lineOf(spec),
             lineEnd: endLineOf(spec),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -57,6 +66,7 @@ export function parseGoFile(
         const pathNode = importNode.childForFieldName("path");
         const importPath = pathNode?.text?.replace(/^"|"$/g, "");
         if (!importPath) return;
+        const snippet = nodeSnippet(importNode) || pathNode?.text;
         dependencies.push(
           makeDependency({
             ctx: treeCtx,
@@ -64,6 +74,7 @@ export function parseGoFile(
             to: importPath,
             kind: "imports",
             line: lineOf(importNode),
+            snippet,
           }),
         );
         symbols.push(
@@ -73,6 +84,7 @@ export function parseGoFile(
             kind: "import",
             filePath,
             line: lineOf(importNode),
+            snippet,
           }),
         );
       });

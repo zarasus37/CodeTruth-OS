@@ -13,5 +13,15 @@ describe("parsePythonFile", () => {
     expect(result.symbols.some((s) => s.name === "run")).toBe(true);
     expect(result.dependencies.some((d) => d.to === "utils")).toBe(true);
     expect(result.symbols.every((s) => s.evidenceChain.length >= 1)).toBe(true);
+
+    const runFn = result.symbols.find((s) => s.name === "run");
+    expect(runFn?.evidenceChain[0]?.rawSnippet).toContain("def run");
+    expect(["AST", "pattern_match"]).toContain(runFn?.evidenceChain[0]?.extractionMethod);
+
+    const worker = result.symbols.find((s) => s.name === "Worker");
+    expect(worker?.evidenceChain[0]?.rawSnippet).toContain("class Worker");
+
+    const utilsImport = result.dependencies.find((d) => d.to === "utils");
+    expect(utilsImport?.evidenceChain[0]?.rawSnippet).toContain("utils");
   });
 });
