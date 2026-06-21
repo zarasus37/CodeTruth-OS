@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String            @id
+  email             String            @unique
+  displayName       String            @map("display_name")
+  apiToken          String            @unique @map("api_token")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  memberships       WorkspaceMember[]
+  auditEntries      AuditLogEntry[]
+  createdWorkspaces Workspace[]       @relation("WorkspaceCreator")
+
+  @@map("users")
+}
+
+model Workspace {
+  id           String            @id
+  name         String
+  createdAt    DateTime          @default(now()) @map("created_at")
+  createdBy    String            @map("created_by")
+  creator      User              @relation("WorkspaceCreator", fields: [createdBy], references: [id])
+  members      WorkspaceMember[]
+  projects     Project[]
+  auditEntries AuditLogEntry[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  role        String
+  joinedAt    DateTime  @default(now()) @map("joined_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+model Project {
+  id               String     @id
+  workspaceId      String     @map("workspace_id")
+  name             String
+  createdAt        DateTime   @default(now()) @map("created_at")
+  latestSnapshotId String?    @map("latest_snapshot_id")
+  githubConfig     Json?      @map("github_config")
+  workspace        Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  analyses         Analysis[]
+
+  @@index([workspaceId])
+  @@map("projects")
+}
+
+model Analysis {
+  id          String    @id
+  projectId   String    @map("project_id")
+  snapshotId  String    @map("snapshot_id")
+  status      String
+  progress    Int       @default(0)
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+  artifacts   Json?
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("analyses")
+}
+
+model AuditLogEntry {
+  id           String    @id
+  workspaceId  String    @map("workspace_id")
+  userId       String    @map("user_id")
+  action       String
+  resourceType String    @map("resource_type")
+  resourceId   String?   @map("resource_id")
+  timestamp    DateTime  @default(now())
+  metadata     Json?
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@index([workspaceId, timestamp(sort: Desc)])
+  @@map("audit_log_entries")
+}
+
+model FindingReview {
+  id          String   @id
+  analysisId  String   @map("analysis_id")
+  findingId   String   @map("finding_id")
+  workspaceId String   @map("workspace_id")
+  status      String
+  rationale   String?
+  deferUntil  DateTime? @map("defer_until")
+  reviewedBy  String   @map("reviewed_by")
+  reviewedAt  DateTime @map("reviewed_at")
+
+  @@unique([analysisId, findingId])
+  @@index([analysisId])
+  @@map("finding_reviews")
+}
+
+model FindingAnnotation {
+  id          String   @id
+  analysisId  String   @map("analysis_id")
+  findingId   String   @map("finding_id")
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  body        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([analysisId, findingId])
+  @@map("finding_annotations")
+}
+
+model ReportApproval {
+  id              String    @id
+  analysisId      String    @unique @map("analysis_id")
+  workspaceId     String    @map("workspace_id")
+  status          String
+  submittedBy     String?   @map("submitted_by")
+  submittedAt     DateTime? @map("submitted_at")
+  reviewedBy      String?   @map("reviewed_by")
+  reviewedAt      DateTime? @map("reviewed_at")
+  rationale       String?
+  signature       String?
+  signedAt        DateTime? @map("signed_at")
+  analyzerVersion String    @map("analyzer_version")
+
+  @@index([workspaceId])
+  @@map("report_approvals")
+}
+
+model ReAnalysisSchedule {
+  id          String    @id
+  workspaceId String    @map("workspace_id")
+  projectId   String    @map("project_id")
+  enabled     Boolean   @default(true)
+  interval    String
+  lastRunAt   DateTime? @map("last_run_at")
+  nextRunAt   DateTime? @map("next_run_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+
+  @@unique([workspaceId, projectId])
+  @@index([workspaceId])
+  @@map("reanalysis_schedules")
+}
+
+model ComplianceAttestation {
+  id          String    @id
+  workspaceId String    @map("workspace_id")
+  projectId   String?   @map("project_id")
+  framework   String
+  attestedBy  String    @map("attested_by")
+  attestedAt  DateTime  @map("attested_at")
+  expiresAt   DateTime? @map("expires_at")
+  signature   String?
+  notes       String?
+
+  @@index([workspaceId])
+  @@map("compliance_attestations")
+}
+
+model CognitionActivity {
+  id          String   @id
+  workspaceId String   @map("workspace_id")
+  projectId   String?  @map("project_id")
+  analysisId  String?  @map("analysis_id")
+  type        String
+  timestamp   DateTime @default(now())
+  summary     String
+  metadata    Json?
+
+  @@index([workspaceId, timestamp(sort: Desc)])
+  @@map("cognition_activity")
+}
+
+model CustomCompliancePolicy {
+  id                String   @id
+  workspaceId       String   @map("workspace_id")
+  title             String
+  description       String
+  domains           Json
+  gapCategories     Json?    @map("gap_categories")
+  severityThreshold String   @map("severity_threshold")
+  createdAt         DateTime @default(now()) @map("created_at")
+  createdBy         String   @map("created_by")
+
+  @@index([workspaceId])
+  @@map("custom_compliance_policies")
+}

@@ -1,0 +1,38 @@
+{
+  "name": "codetruth-os",
+  "version": "3.0.0",
+  "private": true,
+  "description": "CodeTruth OS — Institutional-grade project cognition platform (V1 Truth Engine)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @codetruth/core && npm run build -w @codetruth/governance -w @codetruth/compliance -w @codetruth/cognition -w @codetruth/parsing -w @codetruth/ingestion -w @codetruth/reconstruction -w @codetruth/spatial -w @codetruth/evaluation -w @codetruth/llm -w @codetruth/truth-council -w @codetruth/planning -w @codetruth/reports -w @codetruth/storage -w @codetruth/pipeline -w @codetruth/github -w @codetruth/queue && npm run build -w @codetruth/api -w @codetruth/worker",
+    "test": "vitest run",
+    "db:up": "docker compose up -d postgres",
+    "redis:up": "docker compose up -d redis",
+    "infra:up": "docker compose up -d postgres redis",
+    "db:push": "npm run db:push -w @codetruth/storage",
+    "db:generate": "npm run db:generate -w @codetruth/storage",
+    "db:migrate-json": "node scripts/migrate-json-to-postgres.mjs",
+    "dev": "npm run build && npm run dev -w @codetruth/api",
+    "dev:pg": "npm run db:up && npm run db:push && npm run dev",
+    "dev:worker": "npm run dev -w @codetruth/worker",
+    "dev:async": "npm run infra:up && npm run db:push && npm run build && npm run dev -w @codetruth/api",
+    "setup:env": "node scripts/setup-env.mjs",
+    "dev:full": "node scripts/dev-full.mjs",
+    "verify:integrations": "node scripts/verify-integrations.mjs",
+    "demo": "node scripts/demo.mjs",
+    "demo:v3": "node scripts/v3-demo.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.5.16",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
