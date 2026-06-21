@@ -2,6 +2,8 @@ import {
   createId,
   createEvidenceFromSymbol,
   enrichEvidenceRecord,
+  gateFindingConfidenceAtSource,
+  inferConfidenceFromEvidence,
   initialFindingLifecycle,
 } from "@codetruth/core";
 import type {
@@ -88,18 +90,11 @@ function makeFinding(input: {
         ? parseFileEvidence
         : absenceChain;
 
-  const confidence =
-    symbolEvidence.length > 0
-      ? symbolEvidence[0]!.confidenceAtExtraction ?? "Strongly Inferred"
-      : input.filePath
-        ? "Confirmed"
-        : "Strongly Inferred";
-
-  return {
+  const draft: Finding = {
     id: createId("find"),
     domain: input.domain,
     severity: input.severity,
-    confidence,
+    confidence: inferConfidenceFromEvidence(evidenceChain),
     title: input.title,
     description: input.description,
     gapCategory: input.gapCategory,
@@ -108,6 +103,9 @@ function makeFinding(input: {
     remediationPath: `Address ${input.title.toLowerCase()} before production deployment.`,
     lifecycleState: initialFindingLifecycle(),
   };
+
+  const gated = gateFindingConfidenceAtSource(draft);
+  return { ...draft, ...gated };
 }
 
 function scoreDomain(present: boolean, partial = false): number {

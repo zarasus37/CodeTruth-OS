@@ -26,6 +26,17 @@ export function isSubstantiveEvidence(record: EvidenceRecord): boolean {
   );
 }
 
+/** True when evidence has a file/symbol anchor beyond repository-level inference. */
+export function hasAnchoredEvidence(chain: EvidenceRecord[]): boolean {
+  return chain.some(
+    (record) =>
+      (record.extractionMethod === "AST" &&
+        (record.lineStart != null || record.symbolId != null)) ||
+      (record.extractionMethod === "config_parse" && record.filePath !== "repository") ||
+      (record.extractionMethod === "pattern_match" && record.lineStart != null),
+  );
+}
+
 export function enrichEvidenceRecord(
   record: Partial<EvidenceRecord> & Pick<EvidenceRecord, "filePath" | "extractionMethod">,
   snapshot?: SnapshotRecord,

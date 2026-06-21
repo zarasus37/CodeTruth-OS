@@ -4,6 +4,7 @@ import {
   createAbsenceEvidence,
   createEvidenceFromSymbol,
   enrichEvidenceRecord,
+  gateFindingConfidenceAtSource,
   hasRichSnippet,
   inferBestConfidenceFromEvidence,
   inferConfidenceFromEvidence,
@@ -13,9 +14,7 @@ import {
 import {
   assertConfidenceLevel,
   confidenceMeetsMinimum,
-  downgradeConfidence,
   isConfidenceLevel,
-  minimumConfidenceForSeverity,
 } from "@codetruth/core";
 import type { EvidenceRecord, Finding, SnapshotRecord, SymbolRecord } from "@codetruth/core";
 
@@ -126,19 +125,15 @@ export function enforceFindingEvidence(
 }
 
 function applySeverityConfidenceGate(finding: Finding): Finding {
-  const minimum = minimumConfidenceForSeverity(finding.severity);
-  const isHighSeverity =
-    finding.severity === "Critical blocker" || finding.severity === "High-risk flaw";
-
-  if (!isHighSeverity) return finding;
-  if (confidenceMeetsMinimum(finding.confidence, minimum)) return finding;
-
-  return {
-    ...finding,
-    confidence: downgradeConfidence(finding.confidence, 1),
-    flaggedForWeakEvidence: true,
-    description: `${finding.description} [Flagged: ${finding.severity} below minimum confidence ${minimum}.]`,
-  };
+  const gated = gateFindingConfidenceAtSource(finding);
+  if (
+    gated.confidence === finding.confidence &&
+    gated.flaggedForWeakEvidence === finding.flaggedForWeakEvidence &&
+    gated.description === finding.description
+  ) {
+    return finding;
+  }
+  return { ...finding, ...gated };
 }
 
 export function evidenceQualityMetrics(findings: Finding[]): {
