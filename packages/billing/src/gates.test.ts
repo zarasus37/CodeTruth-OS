@@ -41,6 +41,29 @@ describe("billing gates", () => {
     );
   });
 
+  it("enterprise plan unlocks SSO and marketplace analyzers", () => {
+    const sub = {
+      ...defaultSubscription("ws_1"),
+      plan: "enterprise" as const,
+      status: "active" as const,
+    };
+    expect(hasFeature(sub, "sso")).toBe(true);
+    expect(hasFeature(sub, "data_residency")).toBe(true);
+    expect(hasFeature(sub, "marketplace_analyzers")).toBe(true);
+    expect(hasFeature(sub, "sovereign_services")).toBe(true);
+    expect(() => assertFeature(sub, "sso")).not.toThrow();
+  });
+
+  it("team plan blocks enterprise-only features", () => {
+    const sub = {
+      ...defaultSubscription("ws_1"),
+      plan: "team" as const,
+      status: "active" as const,
+    };
+    expect(hasFeature(sub, "sso")).toBe(false);
+    expect(() => assertFeature(sub, "marketplace_analyzers")).toThrow(BillingGateError);
+  });
+
   it("pro plan enforces LLM cost cap", () => {
     const sub = {
       ...defaultSubscription("ws_1"),

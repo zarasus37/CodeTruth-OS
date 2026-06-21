@@ -70,6 +70,8 @@
       <div class="stack">
         <a id="oauth-github" class="primary oauth-btn hidden" href="/auth/github">Continue with GitHub</a>
         <a id="oauth-google" class="ghost oauth-btn hidden" href="/auth/google">Continue with Google</a>
+        <a id="oauth-entra" class="ghost oauth-btn hidden" href="/auth/entra">Continue with Microsoft Entra</a>
+        <a id="oauth-okta" class="ghost oauth-btn hidden" href="/auth/okta">Continue with Okta</a>
       </div>
       <form id="login-form" class="stack hidden">
         <label>
@@ -107,6 +109,43 @@
                 <input type="number" id="seat-target-count" min="5" max="50" step="1" />
               </label>
               <button id="add-seats-btn" type="button" class="ghost">Update seat count</button>
+            </div>
+          </div>
+          <div id="enterprise-panel" class="enterprise-panel hidden">
+            <h3>Enterprise</h3>
+            <p id="enterprise-residency" class="muted"></p>
+            <label>
+              Data residency
+              <select id="enterprise-residency-select">
+                <option value="us">US</option>
+                <option value="eu">EU</option>
+                <option value="apac">APAC</option>
+                <option value="sovereign">Sovereign</option>
+              </select>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="enterprise-sso-enabled" />
+              Enable workspace SSO
+            </label>
+            <select id="enterprise-sso-provider">
+              <option value="entra">Microsoft Entra</option>
+              <option value="okta">Okta</option>
+            </select>
+            <button id="enterprise-save-btn" type="button" class="ghost">Save enterprise settings</button>
+            <button id="enterprise-sso-login-btn" type="button" class="ghost hidden">Workspace SSO login</button>
+          </div>
+          <div id="marketplace-panel" class="marketplace-panel hidden">
+            <h3>Marketplace analyzers</h3>
+            <p id="marketplace-summary" class="muted"></p>
+            <div id="marketplace-toggles" class="marketplace-toggles"></div>
+            <button id="marketplace-save-btn" type="button" class="ghost">Save analyzers</button>
+          </div>
+          <div id="sovereign-panel" class="sovereign-panel hidden">
+            <h3>Sovereign due diligence</h3>
+            <ul id="engagement-list" class="engagement-list"></ul>
+            <div class="invite-row">
+              <input type="text" id="engagement-title" placeholder="Engagement title" />
+              <button id="create-engagement-btn" type="button" class="ghost">Create engagement</button>
             </div>
           </div>
           <div class="invite-row">

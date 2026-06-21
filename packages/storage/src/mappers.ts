@@ -13,9 +13,12 @@ import type {
   Project,
   SubscriptionPlan,
   SubscriptionStatus,
+  DueDiligenceEngagement,
+  DueDiligenceStage,
   User,
   UserOnboarding,
   Workspace,
+  WorkspaceSettings,
   WorkspaceMember,
   WorkspaceSubscription,
   WorkspaceUsage,
@@ -29,6 +32,8 @@ export function toUser(row: {
   authProvider?: string | null;
   githubId?: string | null;
   googleId?: string | null;
+  entraId?: string | null;
+  oktaId?: string | null;
   avatarUrl?: string | null;
   betaAccessAt?: Date | null;
   betaInviteCode?: string | null;
@@ -42,6 +47,8 @@ export function toUser(row: {
     authProvider: row.authProvider as User["authProvider"],
     githubId: row.githubId ?? undefined,
     googleId: row.googleId ?? undefined,
+    entraId: row.entraId ?? undefined,
+    oktaId: row.oktaId ?? undefined,
     avatarUrl: row.avatarUrl ?? undefined,
     betaAccessAt: row.betaAccessAt?.toISOString(),
     betaInviteCode: row.betaInviteCode ?? undefined,
@@ -192,6 +199,7 @@ export function toWorkspaceUsage(row: {
 export function toWorkspace(row: {
   id: string;
   name: string;
+  settings?: Prisma.JsonValue | null;
   createdAt: Date;
   createdBy: string;
 }): Workspace {
@@ -200,6 +208,35 @@ export function toWorkspace(row: {
     name: row.name,
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy,
+    settings: (row.settings as WorkspaceSettings | null) ?? undefined,
+  };
+}
+
+export function toDueDiligenceEngagement(row: {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  analysisId: string | null;
+  title: string;
+  clientName: string | null;
+  stage: string;
+  notes: string | null;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt: Date;
+}): DueDiligenceEngagement {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    analysisId: row.analysisId ?? undefined,
+    title: row.title,
+    clientName: row.clientName ?? undefined,
+    stage: row.stage as DueDiligenceStage,
+    notes: row.notes ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    createdBy: row.createdBy,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 

@@ -152,6 +152,10 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       "rbac_advanced",
       "team_seats",
       "quality_gate",
+      "sso",
+      "data_residency",
+      "marketplace_analyzers",
+      "sovereign_services",
     ],
   },
 };

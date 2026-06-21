@@ -7,6 +7,7 @@ import { buildRoadmap } from "@codetruth/planning";
 import { reconstructArchitecture } from "@codetruth/reconstruction";
 import { applySpatialDiffOverlay, buildSpatialGraph } from "@codetruth/spatial";
 import { ANALYZER_VERSION } from "@codetruth/reports";
+import { mergeMarketplaceFindings, runMarketplaceAnalyzers } from "@codetruth/marketplace";
 import { runTruthCouncil } from "@codetruth/truth-council";
 import { emitStream, type StreamCallback } from "./streaming.js";
 import {
@@ -28,6 +29,7 @@ export interface RunPipelineOptions {
   /** Cached artifacts from prior completed analysis (enables scoped re-parse). */
   incrementalBaseArtifacts?: PipelineArtifacts;
   useLlmCouncil?: boolean;
+  enabledMarketplaceAnalyzers?: string[];
 }
 
 export async function runPipeline(
@@ -124,7 +126,14 @@ export async function runPipeline(
   });
 
   await report("evaluation", 50);
-  const { scorecard, findings } = evaluateProject(snapshot, architecture);
+  let { scorecard, findings } = evaluateProject(snapshot, architecture);
+
+  let marketplaceResults;
+  if (options.enabledMarketplaceAnalyzers?.length) {
+    marketplaceResults = runMarketplaceAnalyzers(snapshot, options.enabledMarketplaceAnalyzers);
+    findings = mergeMarketplaceFindings(findings, marketplaceResults);
+    await report("evaluation", 58, { findingCount: findings.length });
+  }
   let spatialGraph = buildSpatialGraph({
     architecture,
     symbols,
@@ -218,5 +227,6 @@ export async function runPipeline(
         ? { quotaDegraded: true }
         : undefined,
     incrementalMetrics,
+    marketplaceResults,
   };
 }

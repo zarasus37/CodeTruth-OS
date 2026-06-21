@@ -43,7 +43,10 @@ import { registerCollaborationRoutes } from "./collaboration-routes.js";
 import { dataRoot, snapshotRoot, storageBackend, store, uploadRoot, webRoot } from "./context.js";
 import { registerGitHubRoutes } from "./github-routes.js";
 import { registerIntegrationsRoutes } from "./integrations-routes.js";
+import { registerEnterpriseRoutes } from "./enterprise-routes.js";
+import { registerMarketplaceRoutes } from "./marketplace-routes.js";
 import { registerQualityGateRoutes } from "./quality-gate-routes.js";
+import { registerSovereignRoutes } from "./sovereign-routes.js";
 import { buildFullReport } from "./report-context.js";
 import { registerSnapshotRoutes } from "./snapshot-routes.js";
 import { registerCognitionRoutes } from "./cognition-routes.js";
@@ -595,6 +598,9 @@ async function bootstrap() {
   await registerCognitionRoutes(app);
   await registerGitHubRoutes(app);
   await registerQualityGateRoutes(app);
+  await registerEnterpriseRoutes(app);
+  await registerMarketplaceRoutes(app);
+  await registerSovereignRoutes(app);
   await registerIntegrationsRoutes(app);
 
   await app.register(staticPlugin, {

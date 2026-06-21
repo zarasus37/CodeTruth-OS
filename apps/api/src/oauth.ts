@@ -20,7 +20,9 @@ function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
-export function signOAuthState(provider: "github" | "google"): string {
+type OAuthProvider = "github" | "google" | "entra" | "okta";
+
+export function signOAuthState(provider: OAuthProvider): string {
   const nonce = randomBytes(16).toString("hex");
   const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
   const payload = `${provider}:${nonce}:${expiresAt}`;
@@ -28,7 +30,7 @@ export function signOAuthState(provider: "github" | "google"): string {
   return Buffer.from(`${payload}:${sig}`).toString("base64url");
 }
 
-export function verifyOAuthState(state: string, provider: "github" | "google"): boolean {
+export function verifyOAuthState(state: string, provider: OAuthProvider): boolean {
   try {
     const decoded = Buffer.from(state, "base64url").toString("utf8");
     const [prov, , expiresAt, sig] = decoded.split(":");
@@ -52,6 +54,28 @@ export function isGoogleOAuthEnabled(): boolean {
   return Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
 }
 
+export function isEntraOAuthEnabled(): boolean {
+  return Boolean(
+    process.env.ENTRA_TENANT_ID &&
+      process.env.ENTRA_CLIENT_ID &&
+      process.env.ENTRA_CLIENT_SECRET,
+  );
+}
+
+export function isOktaOAuthEnabled(): boolean {
+  return Boolean(
+    process.env.OKTA_ISSUER && process.env.OKTA_CLIENT_ID && process.env.OKTA_CLIENT_SECRET,
+  );
+}
+
+function entraTenantId(): string {
+  return process.env.ENTRA_TENANT_ID!;
+}
+
+function oktaIssuer(): string {
+  return process.env.OKTA_ISSUER!.replace(/\/$/, "");
+}
+
 export function isDevEmailLoginEnabled(): boolean {
   if (process.env.AUTH_DEV_EMAIL_LOGIN === "false") return false;
   if (process.env.NODE_ENV === "production" && !isGitHubOAuthEnabled() && !isGoogleOAuthEnabled()) {
@@ -68,6 +92,29 @@ export function githubAuthorizeUrl(state: string): string {
     state,
   });
   return `https://github.com/login/oauth/authorize?${params}`;
+}
+
+export function entraAuthorizeUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.ENTRA_CLIENT_ID!,
+    redirect_uri: `${appUrl()}/auth/entra/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    response_mode: "query",
+  });
+  return `https://login.microsoftonline.com/${entraTenantId()}/oauth2/v2.0/authorize?${params}`;
+}
+
+export function oktaAuthorizeUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.OKTA_CLIENT_ID!,
+    redirect_uri: `${appUrl()}/auth/okta/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+  });
+  return `${oktaIssuer()}/v1/authorize?${params}`;
 }
 
 export function googleAuthorizeUrl(state: string): string {
@@ -303,4 +350,138 @@ export async function handleGoogleCallback(code: string): Promise<User> {
   const { trackEvent } = await import("./telemetry-service.js");
   await trackEvent("user.signed_in", { userId: user.id, properties: { authProvider: "google" } });
   return user;
+}
+
+interface OidcTokenResponse {
+  access_token?: string;
+  id_token?: string;
+}
+
+interface OidcUserInfo {
+  sub: string;
+  email?: string;
+  name?: string;
+  preferred_username?: string;
+  picture?: string;
+}
+
+async function upsertOidcUser(
+  provider: "entra" | "okta",
+  subjectId: string,
+  email: string,
+  displayName: string,
+  avatarUrl?: string,
+): Promise<User> {
+  const lookup =
+    provider === "entra"
+      ? store.getUserByEntraId.bind(store)
+      : store.getUserByOktaId.bind(store);
+
+  let user = await lookup(subjectId);
+  if (!user) {
+    const byEmail = await store.getUserByEmail(email);
+    if (byEmail) {
+      user = {
+        ...byEmail,
+        authProvider: provider,
+        avatarUrl: avatarUrl ?? byEmail.avatarUrl,
+        displayName,
+        ...(provider === "entra" ? { entraId: subjectId } : { oktaId: subjectId }),
+      };
+    } else {
+      user = {
+        id: createId("user"),
+        email: email.trim().toLowerCase(),
+        displayName,
+        apiToken: createApiToken(),
+        createdAt: new Date().toISOString(),
+        authProvider: provider,
+        avatarUrl,
+        ...(provider === "entra" ? { entraId: subjectId } : { oktaId: subjectId }),
+      };
+      await store.saveUser(user);
+      const { trackEvent } = await import("./telemetry-service.js");
+      await trackEvent("user.signed_up", {
+        userId: user.id,
+        properties: { authProvider: provider },
+      });
+    }
+    await store.saveUser(user);
+  }
+
+  const { trackEvent } = await import("./telemetry-service.js");
+  await trackEvent("user.signed_in", { userId: user.id, properties: { authProvider: provider } });
+  return user;
+}
+
+export async function handleEntraCallback(code: string): Promise<User> {
+  const tokenRes = await fetch(
+    `https://login.microsoftonline.com/${entraTenantId()}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.ENTRA_CLIENT_ID!,
+        client_secret: process.env.ENTRA_CLIENT_SECRET!,
+        code,
+        redirect_uri: `${appUrl()}/auth/entra/callback`,
+        grant_type: "authorization_code",
+        scope: "openid email profile",
+      }),
+    },
+  );
+
+  const tokenPayload = (await tokenRes.json()) as OidcTokenResponse;
+  if (!tokenPayload.access_token) {
+    throw new Error("Entra token exchange failed");
+  }
+
+  const userRes = await fetch("https://graph.microsoft.com/oidc/userinfo", {
+    headers: { Authorization: `Bearer ${tokenPayload.access_token}` },
+  });
+  const profile = (await userRes.json()) as OidcUserInfo;
+  const email = profile.email ?? profile.preferred_username;
+  if (!email) throw new Error("Entra account missing email");
+
+  return upsertOidcUser(
+    "entra",
+    profile.sub,
+    email,
+    profile.name ?? email.split("@")[0] ?? "User",
+    profile.picture,
+  );
+}
+
+export async function handleOktaCallback(code: string): Promise<User> {
+  const tokenRes = await fetch(`${oktaIssuer()}/v1/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.OKTA_CLIENT_ID!,
+      client_secret: process.env.OKTA_CLIENT_SECRET!,
+      code,
+      redirect_uri: `${appUrl()}/auth/okta/callback`,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  const tokenPayload = (await tokenRes.json()) as OidcTokenResponse;
+  if (!tokenPayload.access_token) {
+    throw new Error("Okta token exchange failed");
+  }
+
+  const userRes = await fetch(`${oktaIssuer()}/v1/userinfo`, {
+    headers: { Authorization: `Bearer ${tokenPayload.access_token}` },
+  });
+  const profile = (await userRes.json()) as OidcUserInfo;
+  const email = profile.email ?? profile.preferred_username;
+  if (!email) throw new Error("Okta account missing email");
+
+  return upsertOidcUser(
+    "okta",
+    profile.sub,
+    email,
+    profile.name ?? email.split("@")[0] ?? "User",
+    profile.picture,
+  );
 }

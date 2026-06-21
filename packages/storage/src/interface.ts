@@ -8,6 +8,7 @@ import type {
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
+  DueDiligenceEngagement,
   FindingAnnotation,
   FindingReview,
   OnboardingStep,
@@ -32,6 +33,8 @@ export interface DataStore {
   getUserByToken(token: string): Promise<User | undefined>;
   getUserByGithubId(githubId: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
+  getUserByEntraId(entraId: string): Promise<User | undefined>;
+  getUserByOktaId(oktaId: string): Promise<User | undefined>;
   saveUser(user: User): Promise<void>;
   getSessionByToken(token: string): Promise<AuthSession | undefined>;
   saveSession(session: AuthSession): Promise<void>;
@@ -90,4 +93,8 @@ export interface DataStore {
   countBetaRedemptions(): Promise<number>;
   setUserBetaAccess(userId: string, inviteCode: string, accessAt: string): Promise<void>;
   hasUserBetaAccess(userId: string): Promise<boolean>;
+  listDueDiligenceEngagements(workspaceId: string): Promise<DueDiligenceEngagement[]>;
+  getDueDiligenceEngagement(id: string): Promise<DueDiligenceEngagement | undefined>;
+  saveDueDiligenceEngagement(engagement: DueDiligenceEngagement): Promise<void>;
+  deleteDueDiligenceEngagement(id: string): Promise<void>;
 }

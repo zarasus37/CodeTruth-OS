@@ -1,14 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { authenticate } from "./auth.js";
 import {
+  entraAuthorizeUrl,
   githubAuthorizeUrl,
   googleAuthorizeUrl,
+  handleEntraCallback,
   handleGitHubCallback,
   handleGoogleCallback,
+  handleOktaCallback,
   isDevEmailLoginEnabled,
+  isEntraOAuthEnabled,
   isGitHubOAuthEnabled,
   isGoogleOAuthEnabled,
+  isOktaOAuthEnabled,
   issueAuthResponse,
+  oktaAuthorizeUrl,
   parseSessionCookie,
   signOAuthState,
   verifyOAuthState,
@@ -20,6 +26,8 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get("/auth/providers", async () => ({
     github: isGitHubOAuthEnabled(),
     google: isGoogleOAuthEnabled(),
+    entra: isEntraOAuthEnabled(),
+    okta: isOktaOAuthEnabled(),
     devEmail: isDevEmailLoginEnabled(),
   }));
 
@@ -76,6 +84,64 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
       } catch (error) {
         return reply.code(500).send({
           error: error instanceof Error ? error.message : "Google OAuth failed",
+        });
+      }
+    },
+  );
+
+  app.get("/auth/entra", async (_request, reply) => {
+    if (!isEntraOAuthEnabled()) {
+      return reply.code(503).send({ error: "Entra SSO is not configured" });
+    }
+    const state = signOAuthState("entra");
+    return reply.redirect(entraAuthorizeUrl(state));
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string } }>(
+    "/auth/entra/callback",
+    async (request, reply) => {
+      const code = request.query.code;
+      const state = request.query.state;
+      if (!code || !state || !verifyOAuthState(state, "entra")) {
+        return reply.code(400).send({ error: "Invalid Entra OAuth callback" });
+      }
+
+      try {
+        const user = await handleEntraCallback(code);
+        const payload = await issueAuthResponse(user, reply);
+        return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
+      } catch (error) {
+        return reply.code(500).send({
+          error: error instanceof Error ? error.message : "Entra OAuth failed",
+        });
+      }
+    },
+  );
+
+  app.get("/auth/okta", async (_request, reply) => {
+    if (!isOktaOAuthEnabled()) {
+      return reply.code(503).send({ error: "Okta SSO is not configured" });
+    }
+    const state = signOAuthState("okta");
+    return reply.redirect(oktaAuthorizeUrl(state));
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string } }>(
+    "/auth/okta/callback",
+    async (request, reply) => {
+      const code = request.query.code;
+      const state = request.query.state;
+      if (!code || !state || !verifyOAuthState(state, "okta")) {
+        return reply.code(400).send({ error: "Invalid Okta OAuth callback" });
+      }
+
+      try {
+        const user = await handleOktaCallback(code);
+        const payload = await issueAuthResponse(user, reply);
+        return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
+      } catch (error) {
+        return reply.code(500).send({
+          error: error instanceof Error ? error.message : "Okta OAuth failed",
         });
       }
     },

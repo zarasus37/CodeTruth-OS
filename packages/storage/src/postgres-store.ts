@@ -9,6 +9,7 @@ import type {
   ComplianceAttestation,
   ComplianceFramework,
   CustomCompliancePolicy,
+  DueDiligenceEngagement,
   GapCategory,
   ScoringDomain,
   SeverityLevel,
@@ -32,6 +33,7 @@ import {
   toAuthSession,
   toBetaInvite,
   toBetaRedemption,
+  toDueDiligenceEngagement,
   toMember,
   toProductEvent,
   toProject,
@@ -98,6 +100,8 @@ export class PostgresStore implements DataStore {
         authProvider: user.authProvider ?? null,
         githubId: user.githubId ?? null,
         googleId: user.googleId ?? null,
+        entraId: user.entraId ?? null,
+        oktaId: user.oktaId ?? null,
         avatarUrl: user.avatarUrl ?? null,
         betaAccessAt: user.betaAccessAt ? new Date(user.betaAccessAt) : null,
         betaInviteCode: user.betaInviteCode ?? null,
@@ -110,6 +114,8 @@ export class PostgresStore implements DataStore {
         authProvider: user.authProvider ?? null,
         githubId: user.githubId ?? null,
         googleId: user.googleId ?? null,
+        entraId: user.entraId ?? null,
+        oktaId: user.oktaId ?? null,
         avatarUrl: user.avatarUrl ?? null,
         betaAccessAt: user.betaAccessAt ? new Date(user.betaAccessAt) : null,
         betaInviteCode: user.betaInviteCode ?? null,
@@ -124,6 +130,16 @@ export class PostgresStore implements DataStore {
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
     const row = await this.prisma.user.findUnique({ where: { googleId } });
+    return row ? toUser(row) : undefined;
+  }
+
+  async getUserByEntraId(entraId: string): Promise<User | undefined> {
+    const row = await this.prisma.user.findUnique({ where: { entraId } });
+    return row ? toUser(row) : undefined;
+  }
+
+  async getUserByOktaId(oktaId: string): Promise<User | undefined> {
+    const row = await this.prisma.user.findUnique({ where: { oktaId } });
     return row ? toUser(row) : undefined;
   }
 
@@ -174,11 +190,13 @@ export class PostgresStore implements DataStore {
       create: {
         id: workspace.id,
         name: workspace.name,
+        settings: toJsonValue(workspace.settings),
         createdAt: new Date(workspace.createdAt),
         createdBy: workspace.createdBy,
       },
       update: {
         name: workspace.name,
+        settings: toJsonValue(workspace.settings),
       },
     });
   }
@@ -858,5 +876,50 @@ export class PostgresStore implements DataStore {
       select: { betaAccessAt: true },
     });
     return Boolean(row?.betaAccessAt);
+  }
+
+  async listDueDiligenceEngagements(workspaceId: string): Promise<DueDiligenceEngagement[]> {
+    const rows = await this.prisma.dueDiligenceEngagement.findMany({
+      where: { workspaceId },
+      orderBy: { updatedAt: "desc" },
+    });
+    return rows.map(toDueDiligenceEngagement);
+  }
+
+  async getDueDiligenceEngagement(id: string): Promise<DueDiligenceEngagement | undefined> {
+    const row = await this.prisma.dueDiligenceEngagement.findUnique({ where: { id } });
+    return row ? toDueDiligenceEngagement(row) : undefined;
+  }
+
+  async saveDueDiligenceEngagement(engagement: DueDiligenceEngagement): Promise<void> {
+    await this.prisma.dueDiligenceEngagement.upsert({
+      where: { id: engagement.id },
+      create: {
+        id: engagement.id,
+        workspaceId: engagement.workspaceId,
+        projectId: engagement.projectId,
+        analysisId: engagement.analysisId ?? null,
+        title: engagement.title,
+        clientName: engagement.clientName ?? null,
+        stage: engagement.stage,
+        notes: engagement.notes ?? null,
+        createdAt: new Date(engagement.createdAt),
+        createdBy: engagement.createdBy,
+        updatedAt: new Date(engagement.updatedAt),
+      },
+      update: {
+        projectId: engagement.projectId,
+        analysisId: engagement.analysisId ?? null,
+        title: engagement.title,
+        clientName: engagement.clientName ?? null,
+        stage: engagement.stage,
+        notes: engagement.notes ?? null,
+        updatedAt: new Date(engagement.updatedAt),
+      },
+    });
+  }
+
+  async deleteDueDiligenceEngagement(id: string): Promise<void> {
+    await this.prisma.dueDiligenceEngagement.deleteMany({ where: { id } });
   }
 }

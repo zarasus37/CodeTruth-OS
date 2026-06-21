@@ -127,6 +127,48 @@
   color: var(--muted);
 }
 
+.enterprise-panel,
+.marketplace-panel,
+.sovereign-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #2a2f3a);
+}
+
+.enterprise-panel h3,
+.marketplace-panel h3,
+.sovereign-panel h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.enterprise-panel label,
+.marketplace-toggles label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.checkbox-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.marketplace-toggles {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.engagement-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
 .seat-management {
   display: flex;
   flex-wrap: wrap;

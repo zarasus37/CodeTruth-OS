@@ -373,6 +373,7 @@ export interface PipelineStreamEvent {
     taskCount?: number;
     incrementalSavingsPercent?: number;
     llmPowered?: boolean;
+    marketplaceAnalyzers?: string[];
   };
 }
 
@@ -487,6 +488,21 @@ export interface LlmCouncilRunMeta {
   quotaDegraded?: boolean;
 }
 
+export interface MarketplaceAnalyzerFinding {
+  analyzerId: string;
+  finding: Finding;
+}
+
+export interface MarketplaceAnalyzerRun {
+  analyzerId: string;
+  analyzerName: string;
+  category: MarketplaceAnalyzerCategory;
+  version: string;
+  findings: Finding[];
+  summary: string;
+  durationMs: number;
+}
+
 export interface PipelineArtifacts {
   snapshot: SnapshotRecord;
   symbols: SymbolRecord[];
@@ -506,6 +522,7 @@ export interface PipelineArtifacts {
   llmFallbackReason?: string;
   llmCouncilMeta?: LlmCouncilRunMeta;
   incrementalMetrics?: IncrementalComputeMetrics;
+  marketplaceResults?: MarketplaceAnalyzerRun[];
 }
 
 export type FindingReviewStatus = "pending" | "accepted" | "rejected" | "deferred";
@@ -574,7 +591,51 @@ export type Permission =
   | "report:approve"
   | "task:export";
 
-export type AuthProvider = "email" | "github" | "google";
+export type AuthProvider = "email" | "github" | "google" | "entra" | "okta";
+
+export type DataResidencyRegion = "us" | "eu" | "apac" | "sovereign";
+
+export type SsoProvider = "entra" | "okta";
+
+export interface WorkspaceSsoConfig {
+  provider: SsoProvider;
+  enabled: boolean;
+  /** Email domains allowed to sign in via workspace SSO (e.g. acme.com). */
+  allowedEmailDomains?: string[];
+  /** Enforce SSO for matching domains (disable password/OAuth for those users). */
+  enforceDomainSso?: boolean;
+}
+
+export interface WorkspaceSettings {
+  dataResidency?: DataResidencyRegion;
+  sso?: WorkspaceSsoConfig;
+  /** Marketplace analyzer IDs enabled for this workspace. */
+  enabledMarketplaceAnalyzers?: string[];
+}
+
+export type MarketplaceAnalyzerCategory = "defi" | "solidity" | "agents";
+
+export type DueDiligenceStage =
+  | "intake"
+  | "technical_review"
+  | "risk_assessment"
+  | "report_draft"
+  | "client_delivery"
+  | "closed";
+
+export interface DueDiligenceEngagement {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  analysisId?: string;
+  title: string;
+  clientName?: string;
+  stage: DueDiligenceStage;
+  notes?: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+}
 
 export type SubscriptionPlan = "free" | "pro" | "team" | "enterprise";
 
@@ -597,7 +658,22 @@ export type BillingFeature =
   | "compliance_audit_export"
   | "rbac_advanced"
   | "team_seats"
-  | "quality_gate";
+  | "quality_gate"
+  | "sso"
+  | "data_residency"
+  | "marketplace_analyzers"
+  | "sovereign_services";
+
+export interface MarketplaceAnalyzerDefinition {
+  id: string;
+  name: string;
+  category: MarketplaceAnalyzerCategory;
+  description: string;
+  version: string;
+  /** Minimum plan feature required. */
+  requiredFeature: BillingFeature;
+  revenueTier: "phase4";
+}
 
 export interface User {
   id: string;
@@ -608,6 +684,8 @@ export interface User {
   authProvider?: AuthProvider;
   githubId?: string;
   googleId?: string;
+  entraId?: string;
+  oktaId?: string;
   avatarUrl?: string;
   betaAccessAt?: string;
   betaInviteCode?: string;
@@ -664,7 +742,11 @@ export type ProductEventName =
   | "contradiction.viewed"
   | "finding.override"
   | "activation.moment_viewed"
-  | "incremental.savings";
+  | "incremental.savings"
+  | "enterprise.settings_updated"
+  | "marketplace.analyzer_enabled"
+  | "sovereign.engagement_created"
+  | "sovereign.playbook_exported";
 
 export interface ProductEvent {
   id: string;
@@ -727,6 +809,7 @@ export interface Workspace {
   name: string;
   createdAt: string;
   createdBy: string;
+  settings?: WorkspaceSettings;
 }
 
 export interface WorkspaceMember {

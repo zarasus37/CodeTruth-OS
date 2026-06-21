@@ -9,6 +9,7 @@ import type {
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
+  DueDiligenceEngagement,
   FindingAnnotation,
   FindingReview,
   ProductEvent,
@@ -79,6 +80,14 @@ export class JsonStore implements DataStore {
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
     return (await this.listUsers()).find((user) => user.googleId === googleId);
+  }
+
+  async getUserByEntraId(entraId: string): Promise<User | undefined> {
+    return (await this.listUsers()).find((user) => user.entraId === entraId);
+  }
+
+  async getUserByOktaId(oktaId: string): Promise<User | undefined> {
+    return (await this.listUsers()).find((user) => user.oktaId === oktaId);
   }
 
   async getSessionByToken(token: string): Promise<AuthSession | undefined> {
@@ -453,5 +462,33 @@ export class JsonStore implements DataStore {
   async hasUserBetaAccess(userId: string): Promise<boolean> {
     const user = await this.getUser(userId);
     return Boolean(user?.betaAccessAt);
+  }
+
+  async listDueDiligenceEngagements(workspaceId: string): Promise<DueDiligenceEngagement[]> {
+    return (await this.readCollection<DueDiligenceEngagement>("due_diligence_engagements.json")).filter(
+      (engagement) => engagement.workspaceId === workspaceId,
+    );
+  }
+
+  async getDueDiligenceEngagement(id: string): Promise<DueDiligenceEngagement | undefined> {
+    return (await this.readCollection<DueDiligenceEngagement>("due_diligence_engagements.json")).find(
+      (engagement) => engagement.id === id,
+    );
+  }
+
+  async saveDueDiligenceEngagement(engagement: DueDiligenceEngagement): Promise<void> {
+    const records = await this.readCollection<DueDiligenceEngagement>("due_diligence_engagements.json");
+    const index = records.findIndex((item) => item.id === engagement.id);
+    if (index >= 0) records[index] = engagement;
+    else records.push(engagement);
+    await this.writeCollection("due_diligence_engagements.json", records);
+  }
+
+  async deleteDueDiligenceEngagement(id: string): Promise<void> {
+    const records = await this.readCollection<DueDiligenceEngagement>("due_diligence_engagements.json");
+    await this.writeCollection(
+      "due_diligence_engagements.json",
+      records.filter((engagement) => engagement.id !== id),
+    );
   }
 }

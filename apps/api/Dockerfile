@@ -8,7 +8,7 @@ RUN npm ci
 COPY tsconfig.base.json ./
 COPY apps/api ./apps/api
 RUN npm run build -w @codetruth/core && \
-    npm run build -w @codetruth/billing -w @codetruth/governance -w @codetruth/compliance -w @codetruth/parsing -w @codetruth/ingestion -w @codetruth/reconstruction -w @codetruth/spatial -w @codetruth/evaluation -w @codetruth/llm -w @codetruth/truth-council -w @codetruth/planning -w @codetruth/reports -w @codetruth/storage -w @codetruth/pipeline -w @codetruth/github && \
+    npm run build -w @codetruth/billing -w @codetruth/governance -w @codetruth/compliance -w @codetruth/parsing -w @codetruth/ingestion -w @codetruth/reconstruction -w @codetruth/spatial -w @codetruth/evaluation -w @codetruth/llm -w @codetruth/truth-council -w @codetruth/planning -w @codetruth/reports -w @codetruth/marketplace -w @codetruth/sovereign -w @codetruth/storage -w @codetruth/pipeline -w @codetruth/github && \
     npm run build -w @codetruth/cognition && \
     npm run build -w @codetruth/queue && \
     npm run build -w @codetruth/api

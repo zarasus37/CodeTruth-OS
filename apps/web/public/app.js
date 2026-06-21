@@ -928,7 +928,101 @@ async function initAuthProviders() {
   const providers = await fetch("/auth/providers").then((r) => r.json());
   document.getElementById("oauth-github").classList.toggle("hidden", !providers.github);
   document.getElementById("oauth-google").classList.toggle("hidden", !providers.google);
+  document.getElementById("oauth-entra").classList.toggle("hidden", !providers.entra);
+  document.getElementById("oauth-okta").classList.toggle("hidden", !providers.okta);
   document.getElementById("login-form").classList.toggle("hidden", !providers.devEmail);
+}
+
+async function loadEnterprisePanels() {
+  const enterprisePanel = document.getElementById("enterprise-panel");
+  const marketplacePanel = document.getElementById("marketplace-panel");
+  const sovereignPanel = document.getElementById("sovereign-panel");
+
+  if (!state.workspaceId || !hasPermission("workspace:manage")) {
+    enterprisePanel.classList.add("hidden");
+    marketplacePanel.classList.add("hidden");
+    sovereignPanel.classList.add("hidden");
+    return;
+  }
+
+  try {
+    const billing = await api(`/workspaces/${state.workspaceId}/billing`);
+    const isEnterprise = billing.features?.includes("sso");
+
+    if (isEnterprise) {
+      const enterprise = await api(`/workspaces/${state.workspaceId}/enterprise`);
+      enterprisePanel.classList.remove("hidden");
+      const residency = enterprise.settings?.dataResidency ?? "us";
+      document.getElementById("enterprise-residency-select").value = residency;
+      document.getElementById("enterprise-residency").textContent = `Data residency: ${residency}`;
+      document.getElementById("enterprise-sso-enabled").checked = Boolean(enterprise.settings?.sso?.enabled);
+      document.getElementById("enterprise-sso-provider").value =
+        enterprise.settings?.sso?.provider ?? "entra";
+      const ssoBtn = document.getElementById("enterprise-sso-login-btn");
+      ssoBtn.classList.toggle("hidden", !enterprise.settings?.sso?.enabled);
+    } else {
+      enterprisePanel.classList.add("hidden");
+    }
+
+    if (billing.features?.includes("marketplace_analyzers")) {
+      const marketplace = await api(`/workspaces/${state.workspaceId}/marketplace`);
+      marketplacePanel.classList.remove("hidden");
+      document.getElementById("marketplace-summary").textContent = `Phase 4 revenue · ${marketplace.enabled.length} enabled`;
+      const toggles = document.getElementById("marketplace-toggles");
+      toggles.innerHTML = marketplace.catalog
+        .map(
+          (analyzer) => `
+          <label class="checkbox-row">
+            <input type="checkbox" data-analyzer-id="${analyzer.id}" ${marketplace.enabled.includes(analyzer.id) ? "checked" : ""} />
+            ${analyzer.name} <span class="muted">(${analyzer.category})</span>
+          </label>`,
+        )
+        .join("");
+    } else {
+      marketplacePanel.classList.add("hidden");
+    }
+
+    if (billing.features?.includes("sovereign_services")) {
+      const sovereign = await api(`/workspaces/${state.workspaceId}/due-diligence`);
+      sovereignPanel.classList.remove("hidden");
+      const list = document.getElementById("engagement-list");
+      list.innerHTML = sovereign.engagements.length
+        ? sovereign.engagements
+            .map(
+              (e) =>
+                `<li>${e.title} · ${e.stage} <button type="button" class="ghost engagement-playbook-btn" data-engagement-id="${e.id}">Export playbook</button></li>`,
+            )
+            .join("")
+        : "<li class='muted'>No engagements yet</li>";
+      list.querySelectorAll(".engagement-playbook-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const engagementId = btn.dataset.engagementId;
+          try {
+            const markdown = await api(
+              `/workspaces/${state.workspaceId}/due-diligence/${engagementId}/playbook.md`,
+            );
+            const blob = new Blob([typeof markdown === "string" ? markdown : JSON.stringify(markdown)], {
+              type: "text/markdown",
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `due-diligence-${engagementId}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+      });
+    } else {
+      sovereignPanel.classList.add("hidden");
+    }
+  } catch {
+    enterprisePanel.classList.add("hidden");
+    marketplacePanel.classList.add("hidden");
+    sovereignPanel.classList.add("hidden");
+  }
 }
 
 async function loadBilling() {
@@ -1031,6 +1125,7 @@ async function loadWorkspaceContext() {
   localStorage.setItem("codetruth_workspace", state.workspaceId);
   workspaceRole.textContent = `Role: ${workspace.role} · Permissions: ${workspace.permissions.join(", ")}`;
   await loadBilling();
+  await loadEnterprisePanels();
 
   const payload = await api(`/workspaces/${state.workspaceId}/projects`);
   state.projects = payload.projects;
@@ -1430,6 +1525,69 @@ document.getElementById("add-seats-btn").addEventListener("click", async () => {
     });
     await loadBilling();
     alert(`Seat count updated to ${target}.`);
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+document.getElementById("enterprise-save-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  try {
+    await api(`/workspaces/${state.workspaceId}/enterprise`, {
+      method: "PUT",
+      body: JSON.stringify({
+        dataResidency: document.getElementById("enterprise-residency-select").value,
+        sso: {
+          enabled: document.getElementById("enterprise-sso-enabled").checked,
+          provider: document.getElementById("enterprise-sso-provider").value,
+        },
+      }),
+    });
+    await loadEnterprisePanels();
+    alert("Enterprise settings saved.");
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+document.getElementById("enterprise-sso-login-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  try {
+    const payload = await api(`/workspaces/${state.workspaceId}/sso/login-url`);
+    window.location.href = payload.url;
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+document.getElementById("marketplace-save-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  const enabledAnalyzerIds = [...document.querySelectorAll("#marketplace-toggles input:checked")].map(
+    (el) => el.dataset.analyzerId,
+  );
+  try {
+    await api(`/workspaces/${state.workspaceId}/marketplace`, {
+      method: "PUT",
+      body: JSON.stringify({ enabledAnalyzerIds }),
+    });
+    await loadEnterprisePanels();
+    alert("Marketplace analyzers updated.");
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+document.getElementById("create-engagement-btn").addEventListener("click", async () => {
+  if (!state.workspaceId || !state.projectId) return;
+  const title = document.getElementById("engagement-title").value.trim();
+  if (!title) return;
+  try {
+    await api(`/workspaces/${state.workspaceId}/due-diligence`, {
+      method: "POST",
+      body: JSON.stringify({ projectId: state.projectId, title }),
+    });
+    document.getElementById("engagement-title").value = "";
+    await loadEnterprisePanels();
   } catch (error) {
     alert(error.message);
   }

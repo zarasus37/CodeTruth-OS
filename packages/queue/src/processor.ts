@@ -6,6 +6,7 @@ import {
   canUseLlmCouncil,
   createEmptyUsage,
   currentUsagePeriod,
+  hasFeature,
   incrementUsage,
 } from "@codetruth/billing";
 import { activityFromAnalysis, createActivityEvent } from "@codetruth/cognition";
@@ -74,6 +75,7 @@ export async function processAnalysisJob(
 
     const project = await options.store.getProject(analysis.projectId);
     let useLlmCouncil = false;
+    let enabledMarketplaceAnalyzers: string[] | undefined;
     if (project) {
       const period = currentUsagePeriod();
       const subscription =
@@ -87,6 +89,12 @@ export async function processAnalysisJob(
         (await options.store.getWorkspaceUsage(project.workspaceId, period)) ??
         createEmptyUsage(project.workspaceId, period);
       useLlmCouncil = canUseLlmCouncil({ subscription, usage });
+
+      const workspace = await options.store.getWorkspace(project.workspaceId);
+      const enabled = workspace?.settings?.enabledMarketplaceAnalyzers ?? [];
+      if (enabled.length && hasFeature(subscription, "marketplace_analyzers")) {
+        enabledMarketplaceAnalyzers = enabled;
+      }
     }
 
     const artifacts = await runPipeline(
@@ -103,6 +111,7 @@ export async function processAnalysisJob(
         incrementalBaseSnapshot,
         incrementalBaseArtifacts,
         useLlmCouncil,
+        enabledMarketplaceAnalyzers,
       },
     );
 

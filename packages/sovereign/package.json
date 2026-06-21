@@ -1,5 +1,5 @@
 {
-  "name": "@codetruth/pipeline",
+  "name": "@codetruth/sovereign",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,19 +16,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@codetruth/core": "*"
+  },
   "devDependencies": {
     "vitest": "^3.0.9"
-  },
-  "dependencies": {
-    "@codetruth/core": "*",
-    "@codetruth/evaluation": "*",
-    "@codetruth/ingestion": "*",
-    "@codetruth/marketplace": "*",
-    "@codetruth/parsing": "*",
-    "@codetruth/planning": "*",
-    "@codetruth/reconstruction": "*",
-    "@codetruth/reports": "*",
-    "@codetruth/spatial": "*",
-    "@codetruth/truth-council": "*"
   }
 }

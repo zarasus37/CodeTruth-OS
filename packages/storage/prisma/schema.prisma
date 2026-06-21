@@ -15,6 +15,8 @@ model User {
   authProvider      String?           @map("auth_provider")
   githubId          String?           @unique @map("github_id")
   googleId          String?           @unique @map("google_id")
+  entraId           String?           @unique @map("entra_id")
+  oktaId            String?           @unique @map("okta_id")
   avatarUrl         String?           @map("avatar_url")
   betaAccessAt      DateTime?         @map("beta_access_at")
   betaInviteCode    String?           @map("beta_invite_code")
@@ -101,6 +103,7 @@ model AuthSession {
 model Workspace {
   id           String                 @id
   name         String
+  settings     Json?
   createdAt    DateTime               @default(now()) @map("created_at")
   createdBy    String                 @map("created_by")
   creator      User                   @relation("WorkspaceCreator", fields: [createdBy], references: [id])
@@ -109,8 +112,27 @@ model Workspace {
   auditEntries AuditLogEntry[]
   subscription WorkspaceSubscription?
   usageRecords WorkspaceUsage[]
+  engagements  DueDiligenceEngagement[]
 
   @@map("workspaces")
+}
+
+model DueDiligenceEngagement {
+  id          String    @id
+  workspaceId String    @map("workspace_id")
+  projectId   String    @map("project_id")
+  analysisId  String?   @map("analysis_id")
+  title       String
+  clientName  String?   @map("client_name")
+  stage       String
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   String    @map("created_by")
+  updatedAt   DateTime  @map("updated_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("due_diligence_engagements")
 }
 
 model WorkspaceSubscription {
