@@ -51,7 +51,7 @@ describe("enforceFindingEvidence", () => {
     const first = next.evidenceChain[0]!;
     expect(first.filePath).toBe("repository");
     expect(first.snapshotHash).toBe(snapshot.hash);
-    expect(first.extractionMethod).toBe("inference");
+    expect(first.extractionMethod).toBe("absence");
   });
 
   it("downgrades overconfident findings without strong evidence", () => {
@@ -189,7 +189,7 @@ describe("degradedUnknownFinding", () => {
     const finding = degradedUnknownFinding(snapshot, "Stage failed", "Evaluation could not complete.");
     expect(finding.confidence).toBe("Unknown");
     expect(finding.evidenceChain).toHaveLength(1);
-    expect(finding.evidenceChain[0]?.extractionMethod).toBe("inference");
+    expect(finding.evidenceChain[0]?.extractionMethod).toBe("absence");
     expect(finding.description).toContain("could not complete");
   });
 });

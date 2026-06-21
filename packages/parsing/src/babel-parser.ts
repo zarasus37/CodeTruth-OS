@@ -11,6 +11,14 @@ const traverse: TraverseFn =
     ? (traverseModule as TraverseFn)
     : (traverseModule as { default: TraverseFn }).default;
 
+function sliceSource(
+  node: { start?: number | null; end?: number | null },
+  content: string,
+): string | undefined {
+  if (node.start == null || node.end == null) return undefined;
+  return content.slice(node.start, node.end);
+}
+
 function babelPlugins(filePath: string) {
   const plugins = ["importAttributes"] as Array<
     "importAttributes" | "typescript" | "jsx"
@@ -55,6 +63,7 @@ export function parseWithBabel(
           lineEnd: path.node.loc?.end.line,
           columnStart: path.node.loc?.start.column,
           columnEnd: path.node.loc?.end.column,
+          snippet: sliceSource(path.node, content),
         }),
       );
     },
@@ -69,6 +78,7 @@ export function parseWithBabel(
           filePath,
           line: path.node.loc?.start.line,
           lineEnd: path.node.loc?.end.line,
+          snippet: sliceSource(path.node, content),
         }),
       );
     },

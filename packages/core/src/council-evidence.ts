@@ -165,7 +165,10 @@ export function buildModelContext(
       description: f.description.slice(0, 240),
       evidencePreview: f.evidenceChain.slice(0, 3).map((e) => {
         const loc = e.lineStart != null ? `:${e.lineStart}` : "";
-        return `${e.filePath}${loc}`;
+        const snippet = (e.rawSnippet ?? e.snippet ?? "").slice(0, 80);
+        const method = e.extractionMethod;
+        const conf = e.confidenceAtExtraction ?? "Unknown";
+        return `${e.filePath}${loc} [${method}, ${conf}]${snippet ? `: ${snippet}` : ""}`;
       }),
     })),
   };

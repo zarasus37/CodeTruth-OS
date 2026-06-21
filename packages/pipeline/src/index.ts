@@ -1,5 +1,4 @@
 import {
-  advanceFindings,
   type AnalysisStage,
   type ArchitectureGraph,
   type BuildStateScorecard,
@@ -35,7 +34,15 @@ import {
   recordFailure,
   stageSnapshot,
 } from "./diagnostics.js";
-import { degradedUnknownFinding, normalizeFindingsForCouncil } from "./evidence.js";
+import {
+  degradedUnknownFinding,
+  evidenceQualityMetrics,
+  normalizeFindingsForCouncil,
+} from "./evidence.js";
+import {
+  advanceFindingsGuarded,
+  assertFindingsAtLeast,
+} from "./lifecycle.js";
 import { emitStream, type StreamCallback } from "./streaming.js";
 import { runIsolatedOperation, runIsolatedStage } from "./stage-runner.js";
 
@@ -307,6 +314,7 @@ export async function runPipeline(
   diagnostics.weakEvidenceFlags = normalized.flagged;
   diagnostics.confidenceBeforeCouncil = buildConfidenceSummary(findings);
   diagnostics.confidenceSummary = diagnostics.confidenceBeforeCouncil;
+  assertFindingsAtLeast(findings, "EvidenceEnforced");
 
   const spatialGraph = await runIsolatedOperation(
     diagnostics,
@@ -370,9 +378,13 @@ export async function runPipeline(
     council.adjustedFindings?.length ? council.adjustedFindings : findings,
   );
   if (council.adjustedFindings?.length) {
-    findings = council.adjustedFindings;
+    findings = council.adjustedFindings.map((finding) => ({
+      ...finding,
+      lifecycleState: finding.lifecycleState ?? "EvidenceEnforced",
+    }));
   }
-  findings = advanceFindings(findings, "CouncilReviewed");
+  const councilLifecycle = advanceFindingsGuarded(findings, "CouncilReviewed");
+  findings = councilLifecycle.findings;
   diagnostics.confidenceSummary = diagnostics.confidenceAfterCouncil;
 
   await report("truth_council", 85, {
@@ -390,11 +402,14 @@ export async function runPipeline(
   );
 
   const taskCount = Object.values(roadmap.tracks).flat().length;
-  findings = advanceFindings(findings, "Finalized");
+  const finalLifecycle = advanceFindingsGuarded(findings, "Finalized");
+  findings = finalLifecycle.findings;
 
   if (incrementalMetrics?.savingsPercent != null) {
     diagnostics.incrementalSavingsPercent = incrementalMetrics.savingsPercent;
   }
+
+  diagnostics.evidenceQuality = evidenceQualityMetrics(findings);
 
   await report("planning", 95, { taskCount, findingCount: findings.length });
 

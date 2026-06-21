@@ -1,4 +1,4 @@
-import { createId } from "@codetruth/core";
+import { createId, enrichEvidenceRecord } from "@codetruth/core";
 import type {
   ConfidenceLevel,
   DependencyEdge,
@@ -42,18 +42,20 @@ function buildEvidence(input: {
 }): EvidenceRecord[] {
   const rawSnippet = input.snippet ?? "";
   const confidenceAtExtraction = confidenceForSymbol(input.ctx.engine);
-  const record: EvidenceRecord = {
-    snapshotHash: input.ctx.snapshotHash,
-    filePath: input.filePath,
-    lineStart: input.lineStart,
-    lineEnd: input.lineEnd,
-    symbolId: input.symbolId,
-    rawSnippet,
-    snippet: rawSnippet.slice(0, 240),
-    extractionMethod: extractionMethod(input.ctx.engine),
-    confidenceAtExtraction,
-  };
-  return [record];
+  return [
+    enrichEvidenceRecord({
+      snapshotHash: input.ctx.snapshotHash,
+      filePath: input.filePath,
+      lineStart: input.lineStart,
+      lineEnd: input.lineEnd,
+      symbolId: input.symbolId,
+      rawSnippet,
+      snippet: rawSnippet.slice(0, 240),
+      extractionMethod: extractionMethod(input.ctx.engine),
+      confidenceAtExtraction,
+      metadata: { parserEngine: input.ctx.parserEngine },
+    }),
+  ];
 }
 
 export function makeSymbol(input: {

@@ -68,6 +68,7 @@ export function inferConfidenceFromEvidence(evidence: EvidenceRecord[]): Confide
   else if (methods.has("config_parse") && hasSnippet) structural = "Confirmed";
   else if (methods.has("pattern_match") && hasLine) structural = "Strongly Inferred";
   else if (methods.has("pattern_match")) structural = "Weakly Inferred";
+  else if (methods.has("absence")) structural = "Unknown";
   else if (methods.has("inference")) structural = "Weakly Inferred";
 
   const extractionLevels = evidence

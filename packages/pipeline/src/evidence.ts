@@ -1,24 +1,36 @@
 import {
   advanceFinding,
   createId,
-  createEvidenceFromFinding,
+  createAbsenceEvidence,
   createEvidenceFromSymbol,
   enrichEvidenceRecord,
+  hasRichSnippet,
+  inferBestConfidenceFromEvidence,
+  inferConfidenceFromEvidence,
   initialFindingLifecycle,
+  isSubstantiveEvidence,
 } from "@codetruth/core";
 import {
   assertConfidenceLevel,
   confidenceMeetsMinimum,
   downgradeConfidence,
-  inferConfidenceFromEvidence,
   isConfidenceLevel,
   minimumConfidenceForSeverity,
 } from "@codetruth/core";
 import type { EvidenceRecord, Finding, SnapshotRecord, SymbolRecord } from "@codetruth/core";
 
-export { createEvidenceFromFinding, createEvidenceFromSymbol } from "@codetruth/core";
+export {
+  createEvidenceFromFinding,
+  createEvidenceFromSymbol,
+} from "@codetruth/core";
 
 const REPOSITORY_PATH = "repository";
+
+function primaryFilePath(finding: Finding): string | undefined {
+  const chain = finding.evidenceChain?.length ? finding.evidenceChain : finding.evidence;
+  const path = chain?.[0]?.filePath;
+  return path && path !== REPOSITORY_PATH ? path : undefined;
+}
 
 function normalizeRecord(
   record: EvidenceRecord,
@@ -31,33 +43,14 @@ function normalizeRecord(
     `${finding.title}: ${finding.description}`.slice(0, 240);
 
   return enrichEvidenceRecord({
+    ...record,
     snapshotHash: record.snapshotHash || snapshot.hash,
     filePath: record.filePath?.trim() || REPOSITORY_PATH,
-    lineStart: record.lineStart,
-    lineEnd: record.lineEnd,
-    symbolId: record.symbolId,
-    symbolName: record.symbolName,
     rawSnippet,
     snippet: (record.snippet ?? rawSnippet).slice(0, 500),
     extractionMethod: record.extractionMethod ?? "inference",
     confidenceAtExtraction:
-      record.confidenceAtExtraction ??
-      inferConfidenceFromEvidence([record]),
-  });
-}
-
-function absenceEvidence(
-  snapshot: SnapshotRecord,
-  finding: Finding,
-  filePath?: string,
-): EvidenceRecord {
-  return enrichEvidenceRecord({
-    snapshotHash: snapshot.hash,
-    filePath: filePath ?? REPOSITORY_PATH,
-    extractionMethod: "inference",
-    rawSnippet: `Absence signal: ${finding.title} — ${finding.description}`,
-    snippet: `Absence signal: ${finding.title}`,
-    confidenceAtExtraction: "Unknown",
+      record.confidenceAtExtraction ?? inferConfidenceFromEvidence([record]),
   });
 }
 
@@ -68,13 +61,16 @@ function attachSymbolEvidence(
 ): EvidenceRecord[] {
   if (!symbols?.length) return [];
 
+  const fileHint = primaryFilePath(finding);
+  const titleTokens = finding.title.toLowerCase().split(/\W+/).filter((t) => t.length > 3);
+
   const related = symbols.filter((symbol) => {
+    const fileMatch = fileHint ? symbol.filePath === fileHint : false;
     const pathMatch = finding.gapCategory
       ? symbol.filePath.toLowerCase().includes(finding.gapCategory.split(" ")[0] ?? "")
       : false;
-    const titleTokens = finding.title.toLowerCase().split(/\W+/).filter((t) => t.length > 3);
     const nameMatch = titleTokens.some((token) => symbol.name.toLowerCase().includes(token));
-    return pathMatch || nameMatch;
+    return fileMatch || pathMatch || nameMatch;
   });
 
   if (!related.length) return [];
@@ -88,22 +84,32 @@ export function enforceFindingEvidence(
   symbols?: SymbolRecord[],
 ): Finding {
   const symbolEvidence = attachSymbolEvidence(finding, snapshot, symbols);
-  const rawChain = finding.evidenceChain?.length
+  let rawChain = finding.evidenceChain?.length
     ? finding.evidenceChain
     : finding.evidence?.length
       ? finding.evidence
-      : symbolEvidence.length
-        ? symbolEvidence
-        : [absenceEvidence(snapshot, finding)];
+      : symbolEvidence;
+
+  if (!rawChain.length) {
+    rawChain = [
+      createAbsenceEvidence(
+        snapshot,
+        finding,
+        "No symbol or file evidence matched during enforcement",
+        primaryFilePath(finding),
+      ),
+    ];
+  }
 
   const mergedChain = [...rawChain, ...symbolEvidence];
   const evidenceChain = mergedChain.map((record) => normalizeRecord(record, snapshot, finding));
-  const confidence = isConfidenceLevel(finding.confidence)
-    ? assertConfidenceLevel(finding.confidence)
-    : inferConfidenceFromEvidence(evidenceChain);
 
-  const inferred = inferConfidenceFromEvidence(evidenceChain);
-  let reconciledConfidence = finding.contradicted ? "Contradicted" : confidence;
+  const inferred = inferBestConfidenceFromEvidence(evidenceChain);
+  const baseConfidence = isConfidenceLevel(finding.confidence)
+    ? assertConfidenceLevel(finding.confidence)
+    : inferred;
+
+  let reconciledConfidence = finding.contradicted ? "Contradicted" : baseConfidence;
   if (
     reconciledConfidence === "Confirmed" &&
     !confidenceMeetsMinimum(inferred, "Confirmed")
@@ -133,6 +139,26 @@ function applySeverityConfidenceGate(finding: Finding): Finding {
     flaggedForWeakEvidence: true,
     description: `${finding.description} [Flagged: ${finding.severity} below minimum confidence ${minimum}.]`,
   };
+}
+
+export function evidenceQualityMetrics(findings: Finding[]): {
+  withRawSnippet: number;
+  substantive: number;
+  absenceSignals: number;
+} {
+  let withRawSnippet = 0;
+  let substantive = 0;
+  let absenceSignals = 0;
+
+  for (const finding of findings) {
+    for (const record of finding.evidenceChain) {
+      if (hasRichSnippet(record)) withRawSnippet += 1;
+      if (isSubstantiveEvidence(record)) substantive += 1;
+      if (record.extractionMethod === "absence") absenceSignals += 1;
+    }
+  }
+
+  return { withRawSnippet, substantive, absenceSignals };
 }
 
 export function normalizeFindingsForCouncil(
@@ -176,7 +202,11 @@ export function degradedUnknownFinding(
     evidence: [],
     evidenceChain: [],
   };
-  const chain = [absenceEvidence(snapshot, placeholder)];
+
+  const chain = [
+    createAbsenceEvidence(snapshot, { ...placeholder, id: placeholder.id }, description),
+  ];
+
   return advanceFinding(
     {
       ...placeholder,

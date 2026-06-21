@@ -1,50 +1,15 @@
-import { mergeConfidence } from "./confidence.js";
-import type {
-  ConfidenceLevel,
-  DependencyEdge,
-  EvidenceRecord,
-  Finding,
-  SymbolRecord,
-} from "./types.js";
-
-const SNIPPET_LIMIT = 500;
-const RAW_SNIPPET_LIMIT = 1200;
-
-export function enrichEvidenceRecord(record: EvidenceRecord): EvidenceRecord {
-  const raw = record.rawSnippet ?? record.snippet ?? "";
-  const snippet = (record.snippet ?? raw).slice(0, SNIPPET_LIMIT);
-  return {
-    ...record,
-    snippet,
-    rawSnippet: raw.slice(0, RAW_SNIPPET_LIMIT),
-    symbolName: record.symbolName,
-    confidenceAtExtraction: record.confidenceAtExtraction,
-  };
-}
-
-export function createEvidenceFromSymbol(
-  symbol: SymbolRecord,
-  snapshotHash?: string,
-): EvidenceRecord {
-  const source = symbol.evidenceChain[0] ?? symbol.evidence[0];
-  const rawSnippet =
-    source?.rawSnippet ??
-    source?.snippet ??
-    `${symbol.kind} ${symbol.name} @ ${symbol.filePath}`;
-
-  return enrichEvidenceRecord({
-    snapshotHash: snapshotHash ?? source?.snapshotHash ?? "",
-    filePath: symbol.filePath,
-    lineStart: symbol.line ?? source?.lineStart,
-    lineEnd: symbol.lineEnd ?? source?.lineEnd,
-    symbolId: symbol.id,
-    symbolName: symbol.name,
-    rawSnippet,
-    snippet: rawSnippet.slice(0, SNIPPET_LIMIT),
-    extractionMethod: source?.extractionMethod ?? "AST",
-    confidenceAtExtraction: symbol.confidence,
-  });
-}
+export {
+  createAbsenceEvidence,
+  createEvidenceFromFinding,
+  createEvidenceFromSymbol,
+  enrichEvidenceRecord,
+  hasRichSnippet,
+  inferBestConfidenceFromEvidence,
+  isSubstantiveEvidence,
+  mergeEvidenceConfidence,
+} from "./evidence.js";
+import { enrichEvidenceRecord } from "./evidence.js";
+import type { DependencyEdge, EvidenceRecord } from "./types.js";
 
 export function createEvidenceFromDependency(
   edge: DependencyEdge,
@@ -57,31 +22,16 @@ export function createEvidenceFromDependency(
     `${edge.kind} ${edge.to}${edge.resolvedTo ? ` → ${edge.resolvedTo}` : ""}`;
 
   return enrichEvidenceRecord({
+    id: source?.id,
     snapshotHash: snapshotHash ?? source?.snapshotHash ?? "",
     filePath: edge.from,
     lineStart: edge.line ?? source?.lineStart,
     lineEnd: source?.lineEnd,
     rawSnippet,
-    snippet: rawSnippet.slice(0, SNIPPET_LIMIT),
+    snippet: rawSnippet.slice(0, 500),
     extractionMethod: source?.extractionMethod ?? "AST",
     confidenceAtExtraction: edge.confidence,
+    createdAt: source?.createdAt,
+    metadata: { dependencyKind: edge.kind, resolvedTo: edge.resolvedTo },
   });
-}
-
-export function createEvidenceFromFinding(finding: Finding): EvidenceRecord[] {
-  const chain = finding.evidenceChain?.length ? finding.evidenceChain : finding.evidence;
-  return chain.map((record) =>
-    enrichEvidenceRecord({
-      ...record,
-      confidenceAtExtraction: record.confidenceAtExtraction ?? finding.confidence,
-    }),
-  );
-}
-
-export function mergeEvidenceConfidence(records: EvidenceRecord[]): ConfidenceLevel | undefined {
-  const levels = records
-    .map((r) => r.confidenceAtExtraction)
-    .filter((level): level is ConfidenceLevel => level != null);
-  if (!levels.length) return undefined;
-  return levels.reduce((acc, level) => mergeConfidence(acc, level));
 }

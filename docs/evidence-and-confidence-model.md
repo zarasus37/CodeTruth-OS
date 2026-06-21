@@ -4,16 +4,19 @@ This document describes how CodeTruth OS builds evidence chains and assigns conf
 
 ## Evidence chains
 
-Every finding, symbol, and council claim must cite at least one **evidence link**. An evidence link is an `EvidenceRecord`:
+Every finding, symbol, and council claim must cite at least one **evidence link**. An evidence link is an `EvidenceRecord` (see `packages/core/src/evidence.ts`):
 
 | Field | Purpose |
 |-------|---------|
+| `id` | Stable evidence link id (`ev_*`) |
 | `filePath` | Repository-relative path (or `repository` for absence signals) |
 | `lineStart` / `lineEnd` | Optional line anchor |
 | `symbolId` / `symbolName` | Optional symbol anchor from parsing |
-| `extractionMethod` | `AST`, `pattern_match`, `config_parse`, or `inference` |
+| `extractionMethod` | `AST`, `pattern_match`, `config_parse`, `inference`, `absence`, `llm_analysis` |
 | `snippet` / `rawSnippet` | Human-readable excerpt (≤500 / ≤1200 chars) |
 | `confidenceAtExtraction` | Confidence tier when the link was created |
+| `createdAt` | ISO timestamp when the link was materialized |
+| `metadata` | Optional extensibility bag (parser engine, absence reason, etc.) |
 
 ### Layer responsibilities
 
@@ -48,7 +51,7 @@ Five tiers, ordered from strongest to weakest:
 
 ## Finding lifecycle
 
-Explicit state machine (`@codetruth/core/state.ts`):
+Explicit state machine (`packages/core/src/state.ts`, guarded in `packages/pipeline/src/lifecycle.ts`):
 
 ```
 Created → EvidenceEnforced → CouncilReviewed → Finalized
@@ -61,7 +64,9 @@ Created → EvidenceEnforced → CouncilReviewed → Finalized
 | `CouncilReviewed` | Truth Council phase completes |
 | `Finalized` | Planning completes; artifacts returned |
 
-Invalid skips (e.g. `Created` → `Finalized`) throw at transition time.
+Invalid skips (e.g. `Created` → `Finalized`) throw at transition time. The pipeline calls `assertFindingsAtLeast(findings, "EvidenceEnforced")` before Truth Council and `advanceFindingsGuarded()` for council/final transitions.
+
+Unit tests: `packages/core/src/state.test.ts` (6 tests), `packages/pipeline/src/lifecycle.test.ts` (4 tests).
 
 ## Contradictions and confidence
 
@@ -74,6 +79,8 @@ When a base snapshot exists, parsing merges retained symbols for unchanged files
 ## Related modules
 
 - `packages/core/src/confidence.ts` — tier math and downgrade helpers
-- `packages/core/src/entity-evidence.ts` — evidence enrichment from symbols/dependencies
+- `packages/core/src/evidence.ts` — evidence factories (`createAbsenceEvidence`, `enrichEvidenceRecord`)
+- `packages/core/src/entity-evidence.ts` — dependency evidence + re-exports
+- `packages/pipeline/src/lifecycle.ts` — guarded lifecycle transitions
 - `packages/pipeline/src/evidence.ts` — council gate and normalization
 - `packages/truth-council/src/downgrades.ts` — cross-review confidence rules

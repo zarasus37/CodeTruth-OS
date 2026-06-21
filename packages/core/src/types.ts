@@ -58,7 +58,16 @@ export type PlanningTrack =
   | "optimize"
   | "scale";
 
+export type ExtractionMethod =
+  | "AST"
+  | "pattern_match"
+  | "config_parse"
+  | "inference"
+  | "absence"
+  | "llm_analysis";
+
 export interface EvidenceRecord {
+  id?: string;
   snapshotHash: string;
   filePath: string;
   lineStart?: number;
@@ -69,9 +78,12 @@ export interface EvidenceRecord {
   snippet?: string;
   /** Verbatim source excerpt at extraction time. */
   rawSnippet?: string;
-  extractionMethod: "AST" | "pattern_match" | "inference" | "config_parse";
+  extractionMethod: ExtractionMethod;
   /** Confidence tier assigned when this evidence link was created. */
   confidenceAtExtraction?: ConfidenceLevel;
+  /** ISO timestamp when this evidence link was materialized. */
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 /** Aggregated parse-layer evidence for upstream evaluation and pipeline gates. */
@@ -490,6 +502,11 @@ export interface PipelineDiagnostics {
   isolatedTargets?: string[];
   /** Incremental parse savings (0–100). Present when incremental mode ran. */
   incrementalSavingsPercent?: number;
+  evidenceQuality?: {
+    withRawSnippet: number;
+    substantive: number;
+    absenceSignals: number;
+  };
 }
 
 export type FindingLifecycleState =
