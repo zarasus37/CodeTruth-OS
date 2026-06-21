@@ -136,7 +136,8 @@ export function renderHtmlReport(report: TruthReport): string {
       <article class="contradiction">
         <h3>${c.claim}</h3>
         <p><strong>Challenge:</strong> ${c.challenge}</p>
-        <p><strong>Models:</strong> ${c.models.join(", ")} · <strong>Status:</strong> ${c.severity}</p>
+        <p><strong>Models:</strong> ${c.models.join(", ")} · <strong>Dispute:</strong> ${c.modelA} ↔ ${c.modelB} · <strong>Status:</strong> ${c.severity}</p>
+        ${c.suggestedResolution ? `<p><em>Suggested resolution:</em> ${c.suggestedResolution}</p>` : ""}
       </article>`,
     )
     .join("");

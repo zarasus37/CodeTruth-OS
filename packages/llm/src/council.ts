@@ -1,8 +1,14 @@
-import { createId, serializeCouncilEvidenceForLlm } from "@codetruth/core";
+import {
+  buildModelContext,
+  createId,
+  serializeCouncilEvidenceForLlm,
+  serializeModelContextForLlm,
+} from "@codetruth/core";
 import type {
   ConsensusTruthReport,
   ContradictionRecord,
   CouncilEvidenceBundle,
+  CouncilModelContext,
   CouncilPhaseResult,
   ModelAssessment,
 } from "@codetruth/core";
@@ -59,14 +65,22 @@ function parseBulletList(text: string): string[] {
 
 async function phase1(
   model: CouncilModel,
-  context: string,
+  bundleContext: string,
+  modelContext: string,
+  injectedContext: CouncilModelContext,
   onProvider?: (provider: string, modelName: string) => void,
 ): Promise<ModelAssessment> {
   const messages: LlmMessage[] = [
     { role: "system", content: MODEL_PROMPTS[model] },
     {
       role: "user",
-      content: `Phase 1 — independent assessment. Return 4-8 bullet findings citing evidence file paths.\n\nStructured evidence:\n${context}`,
+      content: `Phase 1 — independent assessment. Return 4-8 bullet findings citing evidence file paths.
+
+Per-model context (snippets, architecture nodes, scoped findings):
+${modelContext}
+
+Shared council evidence:
+${bundleContext}`,
     },
   ];
   const result = await completeChatWithMeta(messages, { model: getCouncilModel(model) });
@@ -78,6 +92,7 @@ async function phase1(
     confidence: bullets.length >= 4 ? "Strongly Inferred" : "Weakly Inferred",
     findingsReviewed: bullets.length,
     evidenceCited: [],
+    injectedContext,
   };
 }
 
@@ -119,25 +134,39 @@ ${context}`,
   const challenges = parseBulletList(challengeBlock.replace(/CHALLENGES:/i, ""));
   const notes = parseBulletList(revisedBlock);
 
-  const contradictions: ContradictionRecord[] = challenges.slice(0, 4).map((challenge) => ({
-    id: createId("contradiction"),
-    claim: `${model} independent assessment`,
-    challenge,
-    models: [model, "Truth Council"],
-    severity: "unresolved" as const,
-    impactSeverity: "medium" as const,
-    disagreementPenalty: 0.3,
-    resolution: "preserved_disagreement" as const,
-    positions: [
-      {
-        model,
-        stance: "challenges" as const,
-        claim: challenge,
-        confidence: "Weakly Inferred" as const,
-        evidenceRefs: [],
-      },
-    ],
-  }));
+  const contradictions: ContradictionRecord[] = challenges.slice(0, 4).map((challenge) => {
+    const positionB = {
+      model,
+      stance: "challenges" as const,
+      claim: challenge,
+      confidence: "Weakly Inferred" as const,
+      evidenceRefs: [] as string[],
+    };
+    const positionA = {
+      model: "Truth Council",
+      stance: "supports" as const,
+      claim: `${model} independent assessment`,
+      confidence: "Strongly Inferred" as const,
+      evidenceRefs: [] as string[],
+    };
+    return {
+      id: createId("contradiction"),
+      claim: `${model} independent assessment`,
+      challenge,
+      models: [model, "Truth Council"],
+      modelA: "Truth Council",
+      modelB: model,
+      positionA,
+      positionB,
+      severity: "unresolved" as const,
+      impactSeverity: "medium" as const,
+      disagreementPenalty: 0.3,
+      resolution: "preserved_disagreement" as const,
+      suggestedResolution:
+        "Preserve LLM disagreement; corroborate with repository evidence before upgrading confidence.",
+      positions: [positionA, positionB],
+    };
+  });
 
   const bullets = notes.length ? notes : parseBulletList(content);
   return {
@@ -214,12 +243,19 @@ export async function runLlmTruthCouncil(
   const phase1Results = Object.fromEntries(
     await Promise.all(
       COUNCIL_MODELS.map(async (model) => {
-        const assessment = await phase1(model, context, (provider, modelName) => {
-          if (!primaryProvider) {
-            primaryProvider = provider;
-            primaryModel = modelName;
-          }
-        });
+        const injectedContext = buildModelContext(bundle, model);
+        const assessment = await phase1(
+          model,
+          context,
+          serializeModelContextForLlm(injectedContext),
+          injectedContext,
+          (provider, modelName) => {
+            if (!primaryProvider) {
+              primaryProvider = provider;
+              primaryModel = modelName;
+            }
+          },
+        );
         return [model, assessment] as const;
       }),
     ),

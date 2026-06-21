@@ -50,5 +50,8 @@ describe("runHeuristicTruthCouncil", () => {
     const match = result.contradictionRegister.find((c) => c.subjectFindingId === "f1");
     expect(match?.positions?.length).toBeGreaterThan(0);
     expect(match?.impactSeverity).toBeDefined();
+    expect(match?.modelA).toBeDefined();
+    expect(match?.modelB).toBeDefined();
+    expect(match?.suggestedResolution).toBeTruthy();
   });
 });

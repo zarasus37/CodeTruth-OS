@@ -66,6 +66,12 @@ function renderContradictionRegister(
     if (record.impactSeverity) {
       lines.push(`- **Impact:** ${record.impactSeverity}`);
     }
+    if (record.modelA && record.modelB) {
+      lines.push(`- **Dispute:** ${record.modelA} ↔ ${record.modelB}`);
+    }
+    if (record.suggestedResolution) {
+      lines.push(`- **Suggested resolution:** ${record.suggestedResolution}`);
+    }
     if (record.disagreementPenalty != null) {
       lines.push(`- **Disagreement penalty:** ${(record.disagreementPenalty * 100).toFixed(0)}%`);
     }

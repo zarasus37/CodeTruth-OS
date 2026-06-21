@@ -531,12 +531,42 @@ export interface CouncilModelPosition {
   evidenceRefs: string[];
 }
 
+export interface CouncilModelContext {
+  model: string;
+  sourceSnippets: Array<{
+    filePath: string;
+    lineStart?: number;
+    lineEnd?: number;
+    symbolName?: string;
+    extractionMethod: EvidenceRecord["extractionMethod"];
+    snippet: string;
+  }>;
+  architectureNodes: Array<{
+    id: string;
+    name: string;
+    kind: "service" | "module" | "edge";
+    confidence?: ConfidenceLevel;
+    relatedTo?: string;
+  }>;
+  relatedFindings: Array<{
+    id: string;
+    title: string;
+    severity: SeverityLevel;
+    confidence: ConfidenceLevel;
+    domain: ScoringDomain;
+    description: string;
+    evidencePreview: string[];
+  }>;
+}
+
 export interface ModelAssessment {
   model: string;
   bullets: string[];
   confidence: ConfidenceLevel;
   findingsReviewed: number;
   evidenceCited: EvidenceRecord[];
+  /** Rich per-model context injected before independent-phase reasoning. */
+  injectedContext?: CouncilModelContext;
 }
 
 export interface PlannerTask {
@@ -559,14 +589,33 @@ export interface ContradictionRecord {
   claim: string;
   challenge: string;
   models: string[];
+  /** Resolution status — never conflated with impact severity. */
   severity: "resolved" | "unresolved";
+  /** Impact severity of the disagreement (critical / high / medium / low). */
   impactSeverity?: ContradictionImpactSeverity;
   subjectFindingId?: string;
+  /** Primary model asserting the claim under dispute. */
+  modelA: string;
+  /** Primary model challenging or rebutting the claim. */
+  modelB: string;
+  positionA?: CouncilModelPosition;
+  positionB?: CouncilModelPosition;
+  evidenceCitedA?: EvidenceRecord[];
+  evidenceCitedB?: EvidenceRecord[];
+  /** Actionable guidance for planners and human reviewers. */
+  suggestedResolution?: string;
   positions?: CouncilModelPosition[];
   claimEvidence?: EvidenceRecord[];
   challengeEvidence?: EvidenceRecord[];
   disagreementPenalty?: number;
   resolution?: "preserved_disagreement" | "claim_downgraded" | "challenge_rejected";
+}
+
+export interface CrossReviewDowngradeAudit {
+  model: string;
+  previousConfidence: ConfidenceLevel;
+  newConfidence: ConfidenceLevel;
+  reasons: string[];
 }
 
 export interface CouncilPhaseResult {

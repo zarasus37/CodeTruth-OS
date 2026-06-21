@@ -3,9 +3,19 @@ import type {
   BuildStateScorecard,
   CouncilEvidenceBundle,
   CouncilFindingContext,
+  CouncilModelContext,
   EvidenceRecord,
   Finding,
+  ScoringDomain,
 } from "./types.js";
+
+const MODEL_DOMAINS: Record<string, ScoringDomain[]> = {
+  "Architecture Model": ["code structure", "integration health"],
+  "Runtime Model": ["runtime readiness", "build readiness"],
+  "DevOps Model": ["DevOps maturity", "observability"],
+  "Security Model": ["security posture"],
+  "Planning Model": [],
+};
 
 function findingChain(finding: Finding): EvidenceRecord[] {
   return finding.evidenceChain?.length ? finding.evidenceChain : finding.evidence;
@@ -65,6 +75,113 @@ export function buildCouncilEvidenceBundle(
     findings: findingContexts,
     evidencePool,
   };
+}
+
+function snippetText(record: EvidenceRecord): string {
+  return (record.rawSnippet ?? record.snippet ?? "").slice(0, 400);
+}
+
+function architectureNodesForModel(
+  bundle: CouncilEvidenceBundle,
+  domains: ScoringDomain[],
+): CouncilModelContext["architectureNodes"] {
+  const nodes: CouncilModelContext["architectureNodes"] = [];
+  const includeAll = domains.length === 0;
+
+  for (const service of bundle.architecture.services) {
+    if (includeAll || domains.includes("integration health") || domains.includes("code structure")) {
+      nodes.push({
+        id: service.id,
+        name: service.name,
+        kind: "service",
+        confidence: service.confidence,
+      });
+    }
+  }
+
+  for (const mod of bundle.architecture.modules) {
+    if (includeAll || domains.includes("code structure")) {
+      nodes.push({
+        id: mod.id,
+        name: mod.name,
+        kind: "module",
+        confidence: mod.confidence,
+        relatedTo: mod.serviceId,
+      });
+    }
+  }
+
+  for (const edge of bundle.architecture.edges.slice(0, 16)) {
+    if (includeAll || domains.includes("integration health") || domains.includes("code structure")) {
+      nodes.push({
+        id: `${edge.from}→${edge.to}`,
+        name: `${edge.from} → ${edge.to} (${edge.kind})`,
+        kind: "edge",
+        confidence: edge.confidence,
+      });
+    }
+  }
+
+  return nodes.slice(0, 20);
+}
+
+export function buildModelContext(
+  bundle: CouncilEvidenceBundle,
+  model: string,
+  scopedFindings?: CouncilFindingContext[],
+): CouncilModelContext {
+  const domains = MODEL_DOMAINS[model] ?? [];
+  const findings =
+    scopedFindings ??
+    (domains.length
+      ? bundle.findings.filter((f) => domains.includes(f.domain))
+      : bundle.findings);
+
+  const fileSet = new Set(findings.flatMap((f) => f.evidenceChain.map((e) => e.filePath)));
+  const poolSnippets = bundle.evidencePool
+    .filter((e) => fileSet.has(e.filePath) || domains.length === 0)
+    .slice(0, 14);
+
+  const findingSnippets = findings.flatMap((f) => f.evidenceChain).slice(0, 10);
+  const merged = dedupeEvidence([...findingSnippets, ...poolSnippets]);
+
+  return {
+    model,
+    sourceSnippets: merged.slice(0, 16).map((e) => ({
+      filePath: e.filePath,
+      lineStart: e.lineStart,
+      lineEnd: e.lineEnd,
+      symbolName: e.symbolName,
+      extractionMethod: e.extractionMethod,
+      snippet: snippetText(e) || `${e.extractionMethod} evidence at ${e.filePath}`,
+    })),
+    architectureNodes: architectureNodesForModel(bundle, domains),
+    relatedFindings: findings.slice(0, 12).map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      confidence: f.confidence,
+      domain: f.domain,
+      description: f.description.slice(0, 240),
+      evidencePreview: f.evidenceChain.slice(0, 3).map((e) => {
+        const loc = e.lineStart != null ? `:${e.lineStart}` : "";
+        return `${e.filePath}${loc}`;
+      }),
+    })),
+  };
+}
+
+export function serializeModelContextForLlm(context: CouncilModelContext): string {
+  return JSON.stringify(
+    {
+      model: context.model,
+      sourceSnippets: context.sourceSnippets,
+      architectureNodes: context.architectureNodes,
+      relatedFindings: context.relatedFindings,
+    },
+    null,
+    2,
+  );
 }
 
 export function serializeCouncilEvidenceForLlm(bundle: CouncilEvidenceBundle): string {

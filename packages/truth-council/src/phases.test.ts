@@ -63,4 +63,12 @@ describe("runIndependentPhase", () => {
     expect(phase1["Security Model"].findingsReviewed).toBe(1);
     expect(phase1["Architecture Model"].findingsReviewed).toBe(0);
   });
+
+  it("injects rich per-model context", () => {
+    const phase1 = runIndependentPhase(bundle);
+    const ctx = phase1["Security Model"].injectedContext;
+    expect(ctx?.model).toBe("Security Model");
+    expect(ctx?.relatedFindings).toHaveLength(1);
+    expect(ctx?.sourceSnippets.length).toBeGreaterThan(0);
+  });
 });

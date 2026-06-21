@@ -27,6 +27,71 @@ function evidenceRefs(chain: EvidenceRecord[]): string[] {
   });
 }
 
+function suggestResolution(
+  record: Pick<
+    ContradictionRecord,
+    "resolution" | "impactSeverity" | "severity" | "subjectFindingId"
+  >,
+): string {
+  if (record.resolution === "claim_downgraded") {
+    return "Downgrade claim confidence to match evidentiary support before planner sequencing.";
+  }
+  if (record.resolution === "challenge_rejected") {
+    return "Retain original claim; document rebuttal evidence in the contradiction register.";
+  }
+  if (record.impactSeverity === "critical" || record.impactSeverity === "high") {
+    return "Escalate for human review; withhold Confirmed status until line-anchored or AST evidence is added.";
+  }
+  if (record.severity === "unresolved" && record.subjectFindingId) {
+    return "Preserve disagreement; route finding to stabilize track with explicit evidence-gathering tasks.";
+  }
+  return "Preserve disagreement; note in planner backlog without blocking lower-priority work.";
+}
+
+type ContradictionDraft = Omit<
+  ContradictionRecord,
+  "modelA" | "modelB" | "positionA" | "positionB" | "evidenceCitedA" | "evidenceCitedB" | "suggestedResolution"
+> &
+  Partial<
+    Pick<
+      ContradictionRecord,
+      | "modelA"
+      | "modelB"
+      | "positionA"
+      | "positionB"
+      | "evidenceCitedA"
+      | "evidenceCitedB"
+      | "suggestedResolution"
+    >
+  >;
+
+export function finalizeContradiction(draft: ContradictionDraft): ContradictionRecord {
+  const positions = draft.positions ?? [];
+  const supporter = positions.find((p) => p.stance === "supports") ?? positions[0];
+  const challenger = positions.find((p) => p.stance === "challenges") ?? positions[1];
+
+  const modelA = draft.modelA ?? supporter?.model ?? draft.models[0] ?? "Unknown";
+  const modelB = draft.modelB ?? challenger?.model ?? draft.models[1] ?? "Truth Council";
+  const positionA = draft.positionA ?? supporter;
+  const positionB = draft.positionB ?? challenger;
+  const evidenceCitedA = draft.evidenceCitedA ?? draft.claimEvidence ?? [];
+  const evidenceCitedB = draft.evidenceCitedB ?? draft.challengeEvidence ?? [];
+
+  return {
+    ...draft,
+    modelA,
+    modelB,
+    positionA,
+    positionB,
+    evidenceCitedA,
+    evidenceCitedB,
+    suggestedResolution: draft.suggestedResolution ?? suggestResolution(draft),
+    claimEvidence: draft.claimEvidence ?? evidenceCitedA,
+    challengeEvidence: draft.challengeEvidence ?? evidenceCitedB,
+    positions: positions.length ? positions : [positionA, positionB].filter(Boolean) as CouncilModelPosition[],
+  };
+}
+
 export function buildScorecardFindingContradiction(
   bundle: CouncilEvidenceBundle,
 ): ContradictionRecord | null {
@@ -35,12 +100,26 @@ export function buildScorecardFindingContradiction(
 
   const sample = highRisk[0]!;
   const claimEvidence = sample.evidenceChain.slice(0, 3);
+  const positionA: CouncilModelPosition = {
+    model: "Planning Model",
+    stance: "supports",
+    claim: `Maturity stage ${bundle.scorecard.maturityStage} with score ${bundle.scorecard.overall}`,
+    confidence: "Strongly Inferred",
+    evidenceRefs: ["scorecard"],
+  };
+  const positionB: CouncilModelPosition = {
+    model: "Security Model",
+    stance: "challenges",
+    claim: highRisk.map((f) => f.title).join("; "),
+    confidence: sample.confidence,
+    evidenceRefs: evidenceRefs(claimEvidence),
+  };
 
-  return {
+  return finalizeContradiction({
     id: createId("contradiction"),
     claim: `Scorecard indicates strong readiness (${bundle.scorecard.overall}/100)`,
     challenge: `${highRisk.length} high-severity finding(s) remain unresolved`,
-    models: ["Planning Model", "Evaluation Layer"],
+    models: ["Planning Model", "Security Model"],
     severity: "unresolved",
     impactSeverity: "high",
     subjectFindingId: sample.id,
@@ -55,23 +134,12 @@ export function buildScorecardFindingContradiction(
     challengeEvidence: claimEvidence,
     disagreementPenalty: 0.4,
     resolution: "preserved_disagreement",
-    positions: [
-      {
-        model: "Planning Model",
-        stance: "supports",
-        claim: `Maturity stage ${bundle.scorecard.maturityStage} with score ${bundle.scorecard.overall}`,
-        confidence: "Strongly Inferred",
-        evidenceRefs: ["scorecard"],
-      },
-      {
-        model: "Security Model",
-        stance: "challenges",
-        claim: highRisk.map((f) => f.title).join("; "),
-        confidence: sample.confidence,
-        evidenceRefs: evidenceRefs(claimEvidence),
-      },
-    ],
-  };
+    modelA: "Planning Model",
+    modelB: "Security Model",
+    positionA,
+    positionB,
+    positions: [positionA, positionB],
+  });
 }
 
 export function buildOverconfidenceContradiction(
@@ -85,46 +153,51 @@ export function buildOverconfidenceContradiction(
 
   const claimEvidence = chain.slice(0, 3);
   const challengeEvidence = chain.filter((e) => e.extractionMethod !== "inference").slice(0, 2);
+  const resolvedChallengeEvidence = challengeEvidence.length
+    ? challengeEvidence
+    : [
+        {
+          snapshotHash: claimEvidence[0]?.snapshotHash ?? "repository",
+          filePath: claimEvidence[0]?.filePath ?? "repository",
+          extractionMethod: "inference" as const,
+          snippet: "No AST, config, or line-anchored evidence cited",
+        },
+      ];
 
-  return {
+  const positionA: CouncilModelPosition = {
+    model: "Evaluation Layer",
+    stance: "supports",
+    claim: finding.title,
+    confidence: finding.confidence,
+    evidenceRefs: evidenceRefs(claimEvidence),
+  };
+  const positionB: CouncilModelPosition = {
+    model: challenger,
+    stance: "challenges",
+    claim: "High-severity claim exceeds evidentiary support",
+    confidence: "Weakly Inferred",
+    evidenceRefs: evidenceRefs(resolvedChallengeEvidence),
+  };
+
+  return finalizeContradiction({
     id: createId("contradiction"),
     claim: `${finding.title} asserted at ${finding.confidence}`,
     challenge:
       "Evidence chain is inference-only or absent for a high-severity claim; scope should be weakened",
-    models: [challenger, "Security Model"],
+    models: [challenger, "Evaluation Layer"],
     severity: "unresolved",
     impactSeverity: finding.severity === "Critical blocker" ? "critical" : "high",
     subjectFindingId: finding.id,
     claimEvidence,
-    challengeEvidence: challengeEvidence.length
-      ? challengeEvidence
-      : [
-          {
-            snapshotHash: claimEvidence[0]?.snapshotHash ?? "repository",
-            filePath: claimEvidence[0]?.filePath ?? "repository",
-            extractionMethod: "inference",
-            snippet: "No AST, config, or line-anchored evidence cited",
-          },
-        ],
+    challengeEvidence: resolvedChallengeEvidence,
     disagreementPenalty: 0.55,
     resolution: "claim_downgraded",
-    positions: [
-      {
-        model: "Evaluation Layer",
-        stance: "supports",
-        claim: finding.title,
-        confidence: finding.confidence,
-        evidenceRefs: evidenceRefs(claimEvidence),
-      },
-      {
-        model: challenger,
-        stance: "challenges",
-        claim: "High-severity claim exceeds evidentiary support",
-        confidence: "Weakly Inferred",
-        evidenceRefs: evidenceRefs(challengeEvidence),
-      },
-    ],
-  };
+    modelA: "Evaluation Layer",
+    modelB: challenger,
+    positionA,
+    positionB,
+    positions: [positionA, positionB],
+  });
 }
 
 export function buildCrossModelChallenge(
@@ -141,24 +214,22 @@ export function buildCrossModelChallenge(
   const impact: ContradictionImpactSeverity =
     finding.severity === "Critical blocker" ? "critical" : "high";
 
-  const positions: CouncilModelPosition[] = [
-    {
-      model: targetModel,
-      stance: "supports",
-      claim: finding.title,
-      confidence: finding.confidence,
-      evidenceRefs: evidenceRefs(chain),
-    },
-    {
-      model: challenger,
-      stance: "challenges",
-      claim: `${targetModel} overstates "${finding.title}" relative to cited evidence`,
-      confidence: "Weakly Inferred",
-      evidenceRefs: evidenceRefs(chain),
-    },
-  ];
+  const positionA: CouncilModelPosition = {
+    model: targetModel,
+    stance: "supports",
+    claim: finding.title,
+    confidence: finding.confidence,
+    evidenceRefs: evidenceRefs(chain),
+  };
+  const positionB: CouncilModelPosition = {
+    model: challenger,
+    stance: "challenges",
+    claim: `${targetModel} overstates "${finding.title}" relative to cited evidence`,
+    confidence: "Weakly Inferred",
+    evidenceRefs: evidenceRefs(chain),
+  };
 
-  return {
+  return finalizeContradiction({
     id: createId("contradiction"),
     claim: `${targetModel}: ${finding.title}`,
     challenge: `${challenger} disputes confidence (${finding.confidence}) — evidence does not support full claim`,
@@ -170,6 +241,10 @@ export function buildCrossModelChallenge(
     challengeEvidence: chain,
     disagreementPenalty: 0.35,
     resolution: "preserved_disagreement",
-    positions,
-  };
+    modelA: targetModel,
+    modelB: challenger,
+    positionA,
+    positionB,
+    positions: [positionA, positionB],
+  });
 }

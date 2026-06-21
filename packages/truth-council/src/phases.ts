@@ -4,6 +4,7 @@ import type {
   ContradictionRecord,
   CouncilEvidenceBundle,
   CouncilPhaseResult,
+  CrossReviewDowngradeAudit,
   ModelAssessment,
 } from "@codetruth/core";
 import {
@@ -11,6 +12,8 @@ import {
   buildOverconfidenceContradiction,
   buildScorecardFindingContradiction,
 } from "./contradictions.js";
+import { applyCrossReviewDowngrades } from "./downgrades.js";
+import { buildModelContext } from "./model-context.js";
 import { COUNCIL_MODELS, modelFindings, type CouncilModel } from "./models.js";
 import { synthesizeConsensus } from "./synthesis.js";
 
@@ -27,13 +30,21 @@ export function runIndependentPhase(
   const assessments = {} as Record<CouncilModel, ModelAssessment>;
 
   for (const model of COUNCIL_MODELS) {
+    const injectedContext = buildModelContext(bundle, model);
     const scoped = modelFindings(model, bundle.findings);
     const evidenceCited = scoped.flatMap((f) => f.evidenceChain).slice(0, 12);
+    const contextHints = injectedContext.sourceSnippets
+      .slice(0, 3)
+      .map((s) => `${s.filePath}${s.lineStart != null ? `:${s.lineStart}` : ""}`);
     const bullets = scoped.length
       ? scoped.map(
           (f) => `${f.severity}: ${evidenceLine(f)} (${f.confidence}) — ${f.description.slice(0, 120)}`,
         )
       : [`No ${model.replace(" Model", "").toLowerCase()}-domain findings in scope.`];
+
+    if (contextHints.length) {
+      bullets.unshift(`Context: ${contextHints.join(", ")} (${injectedContext.architectureNodes.length} arch nodes)`);
+    }
 
     const confidence =
       scoped.length === 0
@@ -50,6 +61,7 @@ export function runIndependentPhase(
       confidence,
       findingsReviewed: scoped.length,
       evidenceCited,
+      injectedContext,
     };
   }
 
@@ -62,6 +74,7 @@ export function runCrossReviewPhase(
 ): {
   assessments: Record<CouncilModel, ModelAssessment>;
   contradictions: ContradictionRecord[];
+  downgradeAudit: CrossReviewDowngradeAudit[];
 } {
   const contradictions: ContradictionRecord[] = [];
   const seen = new Set<string>();
@@ -91,24 +104,26 @@ export function runCrossReviewPhase(
     }
   }
 
-  const assessments = {} as Record<CouncilModel, ModelAssessment>;
+  const withChallengeBullets = {} as Record<CouncilModel, ModelAssessment>;
   for (const model of COUNCIL_MODELS) {
-    const related = contradictions.filter((c) => c.models.includes(model));
-    const challengeBullets = related.map(
-      (c) => `Challenge: ${c.challenge} (refs: ${c.challengeEvidence?.[0]?.filePath ?? "evidence pool"})`,
+    const related = contradictions.filter(
+      (c) => c.models.includes(model) || c.modelA === model || c.modelB === model,
     );
+    const challengeBullets = related.map((c) => {
+      const ref = c.evidenceCitedB?.[0]?.filePath ?? c.challengeEvidence?.[0]?.filePath ?? "evidence pool";
+      const resolution = c.suggestedResolution ? ` → ${c.suggestedResolution}` : "";
+      return `Challenge (${c.modelB} vs ${c.modelA}): ${c.challenge} [${ref}]${resolution}`;
+    });
     const base = phase1[model];
-    assessments[model] = {
+    withChallengeBullets[model] = {
       ...base,
       bullets: [...challengeBullets, ...base.bullets].slice(0, 12),
-      confidence:
-        related.length > 0 && base.confidence === "Confirmed"
-          ? "Strongly Inferred"
-          : base.confidence,
     };
   }
 
-  return { assessments, contradictions };
+  const { assessments, audit } = applyCrossReviewDowngrades(withChallengeBullets, contradictions);
+
+  return { assessments, contradictions, downgradeAudit: audit };
 }
 
 export interface DeliberationResult {
@@ -116,6 +131,7 @@ export interface DeliberationResult {
   modelNotes: Record<CouncilModel, string[]>;
   contradictionRegister: ContradictionRecord[];
   consensus: ConsensusTruthReport;
+  downgradeAudit?: CrossReviewDowngradeAudit[];
 }
 
 export function runHeuristicDeliberation(
@@ -126,7 +142,7 @@ export function runHeuristicDeliberation(
   const crossReview = runCrossReviewPhase(bundle, independent);
   const consensus = synthesizeConsensus(
     bundle,
-    independent,
+    crossReview.assessments,
     crossReview.contradictions,
     llmPowered,
   );
@@ -134,6 +150,11 @@ export function runHeuristicDeliberation(
   const modelNotes = Object.fromEntries(
     COUNCIL_MODELS.map((model) => [model, crossReview.assessments[model].bullets]),
   ) as Record<CouncilModel, string[]>;
+
+  const downgradeSummary =
+    crossReview.downgradeAudit.length > 0
+      ? ` ${crossReview.downgradeAudit.length} model confidence downgrade(s) applied per cross-review rules.`
+      : "";
 
   const phases: CouncilPhaseResult[] = [
     {
@@ -143,14 +164,14 @@ export function runHeuristicDeliberation(
       ),
       structuredAssessments: Object.values(independent),
       contradictions: [],
-      summary: "Independent first-pass assessments completed for all five model roles.",
+      summary: "Independent first-pass assessments completed with per-model evidence context.",
     },
     {
       phase: "cross_review",
       modelAssessments: modelNotes,
       structuredAssessments: Object.values(crossReview.assessments),
       contradictions: crossReview.contradictions,
-      summary: `${crossReview.contradictions.length} evidence-weighted challenge(s) logged; disagreements preserved.`,
+      summary: `${crossReview.contradictions.length} evidence-weighted challenge(s) logged; disagreements preserved.${downgradeSummary}`,
     },
     {
       phase: "consensus",
@@ -166,5 +187,6 @@ export function runHeuristicDeliberation(
     modelNotes,
     contradictionRegister: crossReview.contradictions,
     consensus,
+    downgradeAudit: crossReview.downgradeAudit,
   };
 }
