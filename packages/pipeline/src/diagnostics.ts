@@ -15,6 +15,8 @@ export function createDiagnostics(): PipelineDiagnostics {
     failures: [],
     confidenceSummary: {},
     evidenceViolationsCorrected: 0,
+    evidenceCorrectionsByStage: {},
+    isolatedTargets: [],
   };
 }
 
@@ -37,10 +39,41 @@ export function completeStage(
   record.state = state;
   record.completedAt = new Date().toISOString();
   if (error) record.error = error;
+  record.durationMs = Math.max(
+    0,
+    new Date(record.completedAt).getTime() - new Date(record.startedAt).getTime(),
+  );
 }
 
 export function recordFailure(diagnostics: PipelineDiagnostics, failure: PipelineStageFailure): void {
   diagnostics.failures.push(failure);
+  if (failure.target) {
+    recordIsolatedTarget(diagnostics, failure.target);
+  }
+}
+
+export function recordIsolatedTarget(diagnostics: PipelineDiagnostics, target: string): void {
+  if (!diagnostics.isolatedTargets) diagnostics.isolatedTargets = [];
+  if (!diagnostics.isolatedTargets.includes(target)) {
+    diagnostics.isolatedTargets.push(target);
+  }
+}
+
+export function recordEvidenceCorrections(
+  diagnostics: PipelineDiagnostics,
+  stage: AnalysisStage,
+  count: number,
+): void {
+  if (count <= 0) return;
+  diagnostics.evidenceViolationsCorrected += count;
+  if (!diagnostics.evidenceCorrectionsByStage) diagnostics.evidenceCorrectionsByStage = {};
+  diagnostics.evidenceCorrectionsByStage[stage] =
+    (diagnostics.evidenceCorrectionsByStage[stage] ?? 0) + count;
+
+  const record = [...diagnostics.stages].reverse().find((s) => s.stage === stage);
+  if (record) {
+    record.evidenceCorrections = (record.evidenceCorrections ?? 0) + count;
+  }
 }
 
 export function buildConfidenceSummary(findings: Finding[]): Partial<Record<ConfidenceLevel, number>> {
@@ -65,4 +98,13 @@ export function stageSnapshot(diagnostics: PipelineDiagnostics): {
 
 export function listStageRecords(diagnostics: PipelineDiagnostics): PipelineStageRecord[] {
   return diagnostics.stages;
+}
+
+export function formatConfidenceDistribution(
+  summary: Partial<Record<ConfidenceLevel, number>> | undefined,
+): string {
+  if (!summary) return "n/a";
+  return CONFIDENCE_LEVELS.filter((level) => (summary[level] ?? 0) > 0)
+    .map((level) => `${level}: ${summary[level]}`)
+    .join(", ");
 }

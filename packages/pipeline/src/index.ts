@@ -3,9 +3,11 @@ import type {
   ArchitectureGraph,
   BuildStateScorecard,
   IncrementalComputeMetrics,
+  MarketplaceAnalyzerRun,
   PipelineArtifacts,
   PipelineStreamEvent,
   SnapshotRecord,
+  SpatialGraph,
 } from "@codetruth/core";
 import { evaluateProject } from "@codetruth/evaluation";
 import { diffSnapshots } from "@codetruth/ingestion";
@@ -19,17 +21,53 @@ import { buildRoadmap } from "@codetruth/planning";
 import { reconstructArchitecture } from "@codetruth/reconstruction";
 import { applySpatialDiffOverlay, buildSpatialGraph } from "@codetruth/spatial";
 import { ANALYZER_VERSION } from "@codetruth/reports";
-import { mergeMarketplaceFindings, runMarketplaceAnalyzers } from "@codetruth/marketplace";
+import {
+  degradedMarketplaceRun,
+  mergeMarketplaceFindings,
+  runMarketplaceAnalyzer,
+} from "@codetruth/marketplace";
 import { runHeuristicTruthCouncil, runTruthCouncil } from "@codetruth/truth-council";
 import {
   buildConfidenceSummary,
   createDiagnostics,
+  recordEvidenceCorrections,
   recordFailure,
   stageSnapshot,
 } from "./diagnostics.js";
 import { degradedUnknownFinding, normalizeFindingsForCouncil } from "./evidence.js";
 import { emitStream, type StreamCallback } from "./streaming.js";
-import { runIsolatedStage } from "./stage-runner.js";
+import { runIsolatedOperation, runIsolatedStage } from "./stage-runner.js";
+
+const EMPTY_SPATIAL_GRAPH: SpatialGraph = {
+  nodes: [],
+  edges: [],
+  bounds: { min: { x: 0, y: 0, z: 0 }, max: { x: 0, y: 0, z: 0 } },
+  layers: [],
+};
+
+async function runMarketplaceWithIsolation(
+  snapshot: SnapshotRecord,
+  enabledAnalyzerIds: string[],
+  diagnostics: ReturnType<typeof createDiagnostics>,
+): Promise<MarketplaceAnalyzerRun[]> {
+  const unique = [...new Set(enabledAnalyzerIds)];
+  const runs: MarketplaceAnalyzerRun[] = [];
+
+  for (const analyzerId of unique) {
+    const run = await runIsolatedOperation(
+      diagnostics,
+      { stage: "evaluation", scope: "analyzer", target: analyzerId },
+      () => runMarketplaceAnalyzer(snapshot, analyzerId),
+      (error) => {
+        const message = error instanceof Error ? error.message : "analyzer failed";
+        return degradedMarketplaceRun(analyzerId, message);
+      },
+    );
+    runs.push(run);
+  }
+
+  return runs;
+}
 import {
   changedFilePaths,
   fullAnalysisMetrics,
@@ -226,21 +264,14 @@ export async function runPipeline(
         parseEvidence: parseEvidenceLedger.records,
       });
       let mergedFindings = result.findings;
-      let marketplaceResults: Awaited<ReturnType<typeof runMarketplaceAnalyzers>> | undefined;
+      let marketplaceResults: MarketplaceAnalyzerRun[] | undefined;
 
       if (options.enabledMarketplaceAnalyzers?.length) {
-        marketplaceResults = runMarketplaceAnalyzers(snapshot, options.enabledMarketplaceAnalyzers);
-        for (const run of marketplaceResults) {
-          if (run.summary.startsWith("Degraded:")) {
-            recordFailure(diagnostics, {
-              stage: "evaluation",
-              scope: "analyzer",
-              target: run.analyzerId,
-              message: run.summary,
-              degraded: true,
-            });
-          }
-        }
+        marketplaceResults = await runMarketplaceWithIsolation(
+          snapshot,
+          options.enabledMarketplaceAnalyzers,
+          diagnostics,
+        );
         mergedFindings = mergeMarketplaceFindings(mergedFindings, marketplaceResults);
       }
 
@@ -271,40 +302,50 @@ export async function runPipeline(
 
   const normalized = normalizeFindingsForCouncil(findings, snapshot, symbols);
   findings = normalized.findings;
-  diagnostics.evidenceViolationsCorrected = normalized.corrected;
+  recordEvidenceCorrections(diagnostics, "evaluation", normalized.corrected);
   diagnostics.weakEvidenceFlags = normalized.flagged;
-  diagnostics.confidenceSummary = buildConfidenceSummary(findings);
+  diagnostics.confidenceBeforeCouncil = buildConfidenceSummary(findings);
+  diagnostics.confidenceSummary = diagnostics.confidenceBeforeCouncil;
 
-  let spatialGraph = buildSpatialGraph({
-    architecture,
-    symbols,
-    dependencies,
-    findings,
-    scorecard,
-  });
+  const spatialGraph = await runIsolatedOperation(
+    diagnostics,
+    { stage: "evaluation", scope: "stage", target: "spatial_graph" },
+    async () => {
+      let graph = buildSpatialGraph({
+        architecture,
+        symbols,
+        dependencies,
+        findings,
+        scorecard,
+      });
 
-  if (options.incrementalBaseSnapshot) {
-    const baseParsed = options.incrementalBaseArtifacts
-      ? { symbols: options.incrementalBaseArtifacts.symbols }
-      : await parseSnapshot(options.incrementalBaseSnapshot);
-    const diff = diffSnapshots(options.incrementalBaseSnapshot, snapshot, {
-      baseSymbols: baseParsed.symbols,
-      targetSymbols: symbols,
-    });
-    spatialGraph = applySpatialDiffOverlay(spatialGraph, diff);
-    if (!incrementalMetrics) {
-      incrementalMetrics = {
-        mode: "incremental",
-        filesTotal: sourceFileTotal,
-        filesParsed: sourceFileTotal,
-        filesSkipped: 0,
-        computeUnitsFull: sourceFileTotal,
-        computeUnitsActual: sourceFileTotal,
-        savingsPercent: 0,
-        changeRatio: diff.changeRatio,
-      };
-    }
-  }
+      if (options.incrementalBaseSnapshot) {
+        const baseParsed = options.incrementalBaseArtifacts
+          ? { symbols: options.incrementalBaseArtifacts.symbols }
+          : await parseSnapshot(options.incrementalBaseSnapshot);
+        const diff = diffSnapshots(options.incrementalBaseSnapshot, snapshot, {
+          baseSymbols: baseParsed.symbols,
+          targetSymbols: symbols,
+        });
+        graph = applySpatialDiffOverlay(graph, diff);
+        if (!incrementalMetrics) {
+          incrementalMetrics = {
+            mode: "incremental",
+            filesTotal: sourceFileTotal,
+            filesParsed: sourceFileTotal,
+            filesSkipped: 0,
+            computeUnitsFull: sourceFileTotal,
+            computeUnitsActual: sourceFileTotal,
+            savingsPercent: 0,
+            changeRatio: diff.changeRatio,
+          };
+        }
+      }
+
+      return graph;
+    },
+    () => EMPTY_SPATIAL_GRAPH,
+  );
 
   await report("evaluation", 65, {
     overallScore: scorecard.overall,
@@ -324,10 +365,13 @@ export async function runPipeline(
     () => runHeuristicTruthCouncil(scorecard, findings, architecture),
   );
 
+  diagnostics.confidenceAfterCouncil = buildConfidenceSummary(
+    council.adjustedFindings?.length ? council.adjustedFindings : findings,
+  );
   if (council.adjustedFindings?.length) {
     findings = council.adjustedFindings;
-    diagnostics.confidenceSummary = buildConfidenceSummary(findings);
   }
+  diagnostics.confidenceSummary = diagnostics.confidenceAfterCouncil;
 
   await report("truth_council", 85, {
     consensusSummary: council.consensus.summary.slice(0, 240),
@@ -385,6 +429,7 @@ export async function runPipeline(
         : undefined,
     incrementalMetrics,
     marketplaceResults,
+    stageFailures: diagnostics.failures,
     diagnostics,
   };
 }

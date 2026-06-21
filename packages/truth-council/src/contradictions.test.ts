@@ -5,6 +5,8 @@ import {
   buildOverconfidenceContradiction,
   buildScorecardFindingContradiction,
   finalizeContradiction,
+  isHighSeverity,
+  isWeakEvidence,
 } from "./contradictions.js";
 
 describe("finalizeContradiction", () => {
@@ -101,5 +103,77 @@ describe("contradiction builders", () => {
     expect(record?.modelA).toBe("Security Model");
     expect(record?.modelB).toBe("Architecture Model");
     expect(record?.positions).toHaveLength(2);
+  });
+
+  it("skips scorecard contradiction when readiness score is below threshold", () => {
+    const lowScoreBundle = buildCouncilEvidenceBundle(
+      { overall: 60, maturityStage: "developing", domains: [] },
+      [
+        {
+          id: "f1",
+          domain: "security posture",
+          severity: "High-risk flaw",
+          confidence: "Confirmed",
+          title: "Missing auth middleware",
+          description: "Routes exposed without auth.",
+          evidence: chain,
+          evidenceChain: chain,
+        },
+      ],
+      { services: [], modules: [], edges: [] },
+    );
+    expect(buildScorecardFindingContradiction(lowScoreBundle)).toBeNull();
+  });
+
+  it("skips overconfidence when evidence is line-anchored AST", () => {
+    const strong = {
+      ...bundle.findings[0]!,
+      evidenceChain: [
+        {
+          snapshotHash: "h",
+          filePath: "src/auth.ts",
+          lineStart: 10,
+          extractionMethod: "AST" as const,
+        },
+      ],
+    };
+    expect(buildOverconfidenceContradiction(strong, "Security Model")).toBeNull();
+  });
+
+  it("skips cross-model challenge for same model", () => {
+    expect(buildCrossModelChallenge("Security Model", "Security Model", bundle.findings[0]!)).toBeNull();
+  });
+});
+
+describe("contradiction generation rules", () => {
+  const sampleFinding = {
+    id: "f1",
+    title: "Sample",
+    severity: "High-risk flaw" as const,
+    domain: "security posture" as const,
+    confidence: "Confirmed" as const,
+    description: "desc",
+    evidenceChain: [] as { snapshotHash: string; filePath: string; extractionMethod: "inference" }[],
+  };
+
+  it("detects weak inference-only evidence", () => {
+    expect(isWeakEvidence([{ snapshotHash: "h", filePath: "repo", extractionMethod: "inference" }])).toBe(
+      true,
+    );
+    expect(
+      isWeakEvidence([
+        {
+          snapshotHash: "h",
+          filePath: "src/a.ts",
+          lineStart: 1,
+          extractionMethod: "AST",
+        },
+      ]),
+    ).toBe(false);
+  });
+
+  it("classifies high-severity findings", () => {
+    expect(isHighSeverity({ ...sampleFinding, severity: "Critical blocker" })).toBe(true);
+    expect(isHighSeverity({ ...sampleFinding, severity: "Low-priority debt" })).toBe(false);
   });
 });

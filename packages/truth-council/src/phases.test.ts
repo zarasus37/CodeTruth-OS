@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCouncilEvidenceBundle } from "@codetruth/core";
-import { runHeuristicDeliberation, runIndependentPhase } from "./phases.js";
+import { runCrossReviewPhase, runHeuristicDeliberation, runIndependentPhase } from "./phases.js";
 
 const bundle = buildCouncilEvidenceBundle(
   {
@@ -70,5 +70,41 @@ describe("runIndependentPhase", () => {
     expect(ctx?.model).toBe("Security Model");
     expect(ctx?.relatedFindings).toHaveLength(1);
     expect(ctx?.sourceSnippets.length).toBeGreaterThan(0);
+  });
+});
+
+describe("full 3-phase deliberation flow", () => {
+  it("preserves contradictions from cross-review through consensus", () => {
+    const result = runHeuristicDeliberation(bundle);
+    const cross = result.phases.find((p) => p.phase === "cross_review");
+    const consensus = result.phases.find((p) => p.phase === "consensus");
+
+    expect(cross?.contradictions.length).toBeGreaterThan(0);
+    expect(consensus?.contradictions.length).toBeGreaterThan(0);
+    expect(consensus?.contradictions.every((c) => c.severity === "unresolved")).toBe(true);
+
+    const registerIds = new Set(result.contradictionRegister.map((c) => c.id));
+    for (const contradiction of consensus?.contradictions ?? []) {
+      expect(registerIds.has(contradiction.id)).toBe(true);
+    }
+  });
+
+  it("applies confidence downgrades after cross-review", () => {
+    const independent = runIndependentPhase(bundle);
+    const cross = runCrossReviewPhase(bundle, independent);
+    const securityBefore = independent["Security Model"].confidence;
+    const securityAfter = cross.assessments["Security Model"].confidence;
+    if (cross.contradictions.some((c) => c.models.includes("Security Model"))) {
+      expect(cross.downgradeAudit.length).toBeGreaterThan(0);
+      expect(securityAfter).not.toBe(securityBefore);
+    }
+  });
+
+  it("threads structured assessments through all phases", () => {
+    const result = runHeuristicDeliberation(bundle);
+    for (const phase of result.phases) {
+      expect(phase.structuredAssessments?.length).toBe(5);
+    }
+    expect(result.consensus.contradictions.length).toBeGreaterThan(0);
   });
 });

@@ -3,6 +3,7 @@ import type { Finding, SnapshotRecord } from "@codetruth/core";
 import type { SymbolRecord } from "@codetruth/core";
 import {
   createEvidenceFromSymbol,
+  degradedUnknownFinding,
   enforceFindingEvidence,
   normalizeFindingsForCouncil,
 } from "./evidence.js";
@@ -156,5 +157,77 @@ describe("normalizeFindingsForCouncil", () => {
     expect(flagged).toBe(1);
     expect(findings[0]?.flaggedForWeakEvidence).toBe(true);
     expect(findings[0]?.evidenceChain[0]?.confidenceAtExtraction).toBeDefined();
+  });
+
+  it("normalizes evidence metadata on every record in the chain", () => {
+    const { findings } = normalizeFindingsForCouncil(
+      [
+        bareFinding({
+          evidence: [
+            {
+              snapshotHash: "",
+              filePath: "src/api.ts",
+              lineStart: 4,
+              extractionMethod: "AST",
+              snippet: "export const handler",
+            },
+          ],
+        }),
+      ],
+      snapshot,
+    );
+    const record = findings[0]?.evidenceChain[0];
+    expect(record?.snapshotHash).toBe(snapshot.hash);
+    expect(record?.rawSnippet).toBeTruthy();
+    expect(record?.confidenceAtExtraction).toBeDefined();
+  });
+});
+
+describe("degradedUnknownFinding", () => {
+  it("produces Unknown-confidence finding with absence evidence", () => {
+    const finding = degradedUnknownFinding(snapshot, "Stage failed", "Evaluation could not complete.");
+    expect(finding.confidence).toBe("Unknown");
+    expect(finding.evidenceChain).toHaveLength(1);
+    expect(finding.evidenceChain[0]?.extractionMethod).toBe("inference");
+    expect(finding.description).toContain("could not complete");
+  });
+});
+
+describe("enforceFindingEvidence violation correction", () => {
+  it("reconciles Confirmed claims to inferred tier when chain is weak", () => {
+    const next = enforceFindingEvidence(
+      bareFinding({
+        confidence: "Confirmed",
+        evidenceChain: [
+          {
+            snapshotHash: snapshot.hash,
+            filePath: "repository",
+            extractionMethod: "inference",
+          },
+        ],
+      }),
+      snapshot,
+    );
+    expect(next.confidence).not.toBe("Confirmed");
+    expect(next.evidenceChain.length).toBeGreaterThan(0);
+  });
+
+  it("marks contradicted findings without upgrading confidence", () => {
+    const next = enforceFindingEvidence(
+      bareFinding({
+        contradicted: true,
+        confidence: "Confirmed",
+        evidence: [
+          {
+            snapshotHash: snapshot.hash,
+            filePath: "src/a.ts",
+            lineStart: 1,
+            extractionMethod: "AST",
+          },
+        ],
+      }),
+      snapshot,
+    );
+    expect(next.confidence).toBe("Contradicted");
   });
 });

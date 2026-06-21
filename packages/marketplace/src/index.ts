@@ -12,6 +12,34 @@ const RUNNERS: Record<string, (snapshot: SnapshotRecord) => MarketplaceAnalyzerR
   "agent-safety": runAgentsAnalyzer,
 };
 
+export function runMarketplaceAnalyzer(
+  snapshot: SnapshotRecord,
+  analyzerId: string,
+): MarketplaceAnalyzerRun {
+  const definition = getMarketplaceAnalyzer(analyzerId);
+  const runner = RUNNERS[analyzerId];
+  if (!definition || !runner) {
+    throw new Error(`Unknown marketplace analyzer: ${analyzerId}`);
+  }
+  return runner(snapshot);
+}
+
+export function degradedMarketplaceRun(
+  analyzerId: string,
+  message: string,
+): MarketplaceAnalyzerRun {
+  const definition = getMarketplaceAnalyzer(analyzerId);
+  return {
+    analyzerId,
+    analyzerName: definition?.name ?? analyzerId,
+    category: definition?.category ?? "agents",
+    version: definition?.version ?? "0.0.0",
+    findings: [],
+    summary: `Degraded: ${message}`,
+    durationMs: 0,
+  };
+}
+
 export function runMarketplaceAnalyzers(
   snapshot: SnapshotRecord,
   enabledAnalyzerIds: string[],
@@ -20,22 +48,11 @@ export function runMarketplaceAnalyzers(
   const runs: MarketplaceAnalyzerRun[] = [];
 
   for (const analyzerId of unique) {
-    const definition = getMarketplaceAnalyzer(analyzerId);
-    const runner = RUNNERS[analyzerId];
-    if (!definition || !runner) continue;
     try {
-      runs.push(runner(snapshot));
+      runs.push(runMarketplaceAnalyzer(snapshot, analyzerId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "analyzer failed";
-      runs.push({
-        analyzerId,
-        analyzerName: definition.name,
-        category: definition.category,
-        version: definition.version,
-        findings: [],
-        summary: `Degraded: ${message}`,
-        durationMs: 0,
-      });
+      runs.push(degradedMarketplaceRun(analyzerId, message));
     }
   }
 

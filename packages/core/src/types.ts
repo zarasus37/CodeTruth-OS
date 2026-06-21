@@ -460,6 +460,10 @@ export interface PipelineStageRecord {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  /** Wall-clock duration for the stage (ms). */
+  durationMs?: number;
+  /** Evidence chain corrections applied during this stage. */
+  evidenceCorrections?: number;
 }
 
 export interface PipelineStageFailure {
@@ -474,9 +478,16 @@ export interface PipelineDiagnostics {
   stages: PipelineStageRecord[];
   failures: PipelineStageFailure[];
   confidenceSummary: Partial<Record<ConfidenceLevel, number>>;
+  /** Finding confidence distribution before Truth Council. */
+  confidenceBeforeCouncil?: Partial<Record<ConfidenceLevel, number>>;
+  /** Finding confidence distribution after Truth Council adjustments. */
+  confidenceAfterCouncil?: Partial<Record<ConfidenceLevel, number>>;
   evidenceViolationsCorrected: number;
+  evidenceCorrectionsByStage?: Partial<Record<AnalysisStage, number>>;
   /** Critical/High findings flagged for weak evidence confidence. */
   weakEvidenceFlags?: number;
+  /** File paths and analyzer ids that triggered isolation or fallback. */
+  isolatedTargets?: string[];
 }
 
 export interface Finding {
@@ -709,6 +720,8 @@ export interface PipelineArtifacts {
   llmCouncilMeta?: LlmCouncilRunMeta;
   incrementalMetrics?: IncrementalComputeMetrics;
   marketplaceResults?: MarketplaceAnalyzerRun[];
+  /** Stage-scoped failures (mirrors diagnostics.failures for report surfacing). */
+  stageFailures?: PipelineStageFailure[];
   diagnostics?: PipelineDiagnostics;
 }
 
@@ -1097,4 +1110,6 @@ export interface TruthReport {
   approval?: ReportApproval;
   reviews?: FindingReview[];
   annotations?: FindingAnnotation[];
+  diagnostics?: PipelineDiagnostics;
+  stageFailures?: PipelineStageFailure[];
 }

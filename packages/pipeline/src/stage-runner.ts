@@ -1,6 +1,33 @@
-import type { AnalysisStage, PipelineDiagnostics } from "@codetruth/core";
+import type { AnalysisStage, PipelineDiagnostics, PipelineStageFailure } from "@codetruth/core";
 import { PipelineError } from "./errors.js";
 import { beginStage, completeStage, recordFailure } from "./diagnostics.js";
+
+export interface IsolatedOperationContext {
+  stage: AnalysisStage;
+  scope: PipelineStageFailure["scope"];
+  target?: string;
+}
+
+export async function runIsolatedOperation<T>(
+  diagnostics: PipelineDiagnostics,
+  context: IsolatedOperationContext,
+  fn: () => Promise<T> | T,
+  fallback: (error: unknown) => T,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordFailure(diagnostics, {
+      stage: context.stage,
+      scope: context.scope,
+      target: context.target,
+      message,
+      degraded: true,
+    });
+    return fallback(error);
+  }
+}
 
 export async function runIsolatedStage<T>(
   diagnostics: PipelineDiagnostics,
