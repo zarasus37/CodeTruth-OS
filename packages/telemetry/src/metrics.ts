@@ -2,17 +2,36 @@ import type { AnalysisJob, ProductEvent, UserOnboarding } from "@codetruth/core"
 
 const MS_PER_DAY = 86_400_000;
 
+/** Blueprint Phase B gates (weeks 3–6). */
+export const PHASE_B_GATES = {
+  activationRate: 0.55,
+  habitFormationRate: 0.65,
+} as const;
+
 export interface BetaMetrics {
   totalUsers: number;
   usersWithFirstAnalysis: number;
+  /** Signup → first completed analysis */
+  activationRate: number;
   activationSurveyRate: number;
   activationMomentRate: number;
   medianMinutesToFirstInsight: number | null;
   habitFormationRate: number;
+  evidenceDrilldownUsers: number;
+  evidenceDrilldownRate: number;
+  contradictionViewUsers: number;
+  contradictionViewRate: number;
+  overrideCount: number;
+  overrideRate: number;
+  upgradePromptCount: number;
   analysesCompleted: number;
   analysesFailed: number;
   betaRedemptions: number;
   onboardingCompletionRate: number;
+  gates: {
+    activationMet: boolean;
+    habitMet: boolean;
+  };
 }
 
 function median(values: number[]): number | null {
@@ -22,6 +41,14 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0
     ? (sorted[mid - 1]! + sorted[mid]!) / 2
     : sorted[mid]!;
+}
+
+function uniqueUsers(events: ProductEvent[], eventName: string): number {
+  const users = new Set<string>();
+  for (const event of events) {
+    if (event.event === eventName && event.userId) users.add(event.userId);
+  }
+  return users.size;
 }
 
 export function computeBetaMetrics(input: {
@@ -77,19 +104,49 @@ export function computeBetaMetrics(input: {
 
   const onboardingCompleted = input.onboardings.filter((o) => o.completedAt).length;
 
+  const activationRate =
+    input.userCount > 0 ? completedFirst.length / input.userCount : 0;
+  const habitFormationRate =
+    byProject.size > 0 ? projectsWithHabit.size / byProject.size : 0;
+
+  const evidenceDrilldownUsers = uniqueUsers(input.events, "evidence.drilldown_clicked");
+  const contradictionViewUsers = uniqueUsers(input.events, "contradiction.viewed");
+  const overrideCount = input.events.filter((e) => e.event === "finding.override").length;
+  const upgradePromptCount = input.events.filter(
+    (e) => e.event === "billing.upgrade_prompt_shown",
+  ).length;
+
+  const engagedUsers = completedFirst.length;
+  const evidenceDrilldownRate =
+    engagedUsers > 0 ? evidenceDrilldownUsers / engagedUsers : 0;
+  const contradictionViewRate =
+    engagedUsers > 0 ? contradictionViewUsers / engagedUsers : 0;
+  const overrideRate = engagedUsers > 0 ? overrideCount / engagedUsers : 0;
+
   return {
     totalUsers: input.userCount,
     usersWithFirstAnalysis: completedFirst.length,
+    activationRate,
     activationSurveyRate:
       completedFirst.length > 0 ? surveyed.length / completedFirst.length : 0,
     activationMomentRate: surveyed.length > 0 ? feltActivation.length / surveyed.length : 0,
     medianMinutesToFirstInsight: median(minutesToInsight),
-    habitFormationRate:
-      byProject.size > 0 ? projectsWithHabit.size / byProject.size : 0,
+    habitFormationRate,
+    evidenceDrilldownUsers,
+    evidenceDrilldownRate,
+    contradictionViewUsers,
+    contradictionViewRate,
+    overrideCount,
+    overrideRate,
+    upgradePromptCount,
     analysesCompleted: completedAnalyses.length,
     analysesFailed: failedAnalyses.length,
     betaRedemptions: input.betaRedemptions,
     onboardingCompletionRate:
       input.userCount > 0 ? onboardingCompleted / input.userCount : 0,
+    gates: {
+      activationMet: activationRate >= PHASE_B_GATES.activationRate,
+      habitMet: habitFormationRate >= PHASE_B_GATES.habitFormationRate,
+    },
   };
 }

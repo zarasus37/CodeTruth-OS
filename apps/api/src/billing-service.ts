@@ -16,6 +16,7 @@ import {
 } from "@codetruth/billing";
 import type { FastifyReply } from "fastify";
 import { store } from "./context.js";
+import { trackEvent } from "./telemetry-service.js";
 
 export { BillingGateError };
 
@@ -54,11 +55,35 @@ export async function buildGateContext(workspaceId: string) {
   };
 }
 
-export function sendBillingError(reply: FastifyReply, error: BillingGateError) {
+export function sendBillingError(
+  reply: FastifyReply,
+  error: BillingGateError,
+  context?: { userId?: string; workspaceId?: string },
+) {
+  void trackEvent("billing.upgrade_blocked", {
+    userId: context?.userId,
+    workspaceId: context?.workspaceId,
+    properties: {
+      code: error.code,
+      upgradePlan: error.upgradePlan,
+      message: error.message,
+    },
+  });
   return reply.code(402).send({
     error: error.message,
     code: error.code,
     upgradePlan: error.upgradePlan,
+    upgrade: {
+      plan: error.upgradePlan ?? "pro",
+      headline: "Upgrade to keep your cognition layer running",
+      valueProps: [
+        "Continuous analysis on every meaningful commit",
+        "GitHub webhooks and live re-analysis schedules",
+        "Spatial navigator, exports, and snapshot history",
+        "LLM Truth Council for adversarial system truth",
+      ],
+      cta: "Start Pro — unlock continuous cognition",
+    },
   });
 }
 

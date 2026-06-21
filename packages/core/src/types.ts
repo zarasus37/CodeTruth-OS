@@ -628,7 +628,12 @@ export type ProductEventName =
   | "beta.invite_redeemed"
   | "billing.checkout_started"
   | "billing.upgrade_blocked"
-  | "feature.used";
+  | "billing.upgrade_prompt_shown"
+  | "feature.used"
+  | "evidence.drilldown_clicked"
+  | "contradiction.viewed"
+  | "finding.override"
+  | "activation.moment_viewed";
 
 export interface ProductEvent {
   id: string;
@@ -645,6 +650,7 @@ export type OnboardingStep =
   | "welcome"
   | "create_workspace"
   | "create_project"
+  | "connect_github"
   | "first_upload"
   | "view_report"
   | "activation_survey";

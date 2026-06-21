@@ -52,8 +52,11 @@ describe("beta metrics", () => {
     });
 
     expect(metrics.usersWithFirstAnalysis).toBe(1);
+    expect(metrics.activationRate).toBe(0.5);
     expect(metrics.activationMomentRate).toBe(1);
     expect(metrics.medianMinutesToFirstInsight).toBe(12);
     expect(metrics.habitFormationRate).toBe(1);
+    expect(metrics.gates.activationMet).toBe(false);
+    expect(metrics.gates.habitMet).toBe(true);
   });
 });

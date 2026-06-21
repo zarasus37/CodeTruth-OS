@@ -12,12 +12,17 @@ const state = {
   analysisId: "",
   collaboration: { reviews: [], annotations: [], approval: null },
   report: null,
+  pendingUpgrade: null,
+  billingPlans: null,
 };
 
 const loginPanel = document.getElementById("login-panel");
 const betaPanel = document.getElementById("beta-panel");
 const onboardingPanel = document.getElementById("onboarding-panel");
 const activationPanel = document.getElementById("activation-panel");
+const upgradePanel = document.getElementById("upgrade-panel");
+const activationMomentPanel = document.getElementById("activation-moment-panel");
+const contradictionsPanel = document.getElementById("contradictions-panel");
 const appPanel = document.getElementById("app-panel");
 const userChip = document.getElementById("user-chip");
 const workspaceSelect = document.getElementById("workspace-select");
@@ -83,11 +88,66 @@ async function api(path, options = {}) {
     : await response.text();
 
   if (!response.ok) {
+    if (response.status === 402 && typeof payload === "object" && payload) {
+      showUpgradeModal(payload);
+      const err = new Error(payload.error || "Upgrade required");
+      err.code = payload.code;
+      err.upgrade = true;
+      throw err;
+    }
     const message =
       typeof payload === "string" ? payload : payload.error || payload.message || "Request failed";
     throw new Error(message);
   }
   return payload;
+}
+
+function trackTelemetry(event, properties = {}) {
+  if (!state.token) return;
+  void fetch("/telemetry/track", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${state.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      event,
+      workspaceId: state.workspaceId || undefined,
+      projectId: state.projectId || undefined,
+      analysisId: state.analysisId || undefined,
+      properties,
+    }),
+  });
+}
+
+function showUpgradeModal(payload) {
+  state.pendingUpgrade = payload;
+  const upgrade = payload.upgrade ?? {};
+  document.getElementById("upgrade-title").textContent =
+    upgrade.headline ?? "Upgrade to unlock this feature";
+  document.getElementById("upgrade-message").textContent = payload.error ?? "";
+  const list = document.getElementById("upgrade-value-props");
+  list.innerHTML = "";
+  for (const item of upgrade.valueProps ?? [
+    "Continuous analysis on every commit",
+    "Webhooks and live re-analysis",
+    "Exports, spatial navigator, and LLM Truth Council",
+  ]) {
+    const li = document.createElement("li");
+    li.textContent = item;
+    list.appendChild(li);
+  }
+  upgradePanel.classList.remove("hidden");
+  appPanel.classList.add("hidden");
+  trackTelemetry("billing.upgrade_prompt_shown", {
+    code: payload.code,
+    upgradePlan: payload.upgradePlan ?? upgrade.plan,
+  });
+}
+
+function hideUpgradeModal() {
+  upgradePanel.classList.add("hidden");
+  appPanel.classList.remove("hidden");
 }
 
 function currentWorkspace() {
@@ -116,9 +176,16 @@ const ONBOARDING_FLOW = [
     copy: "Each project tracks snapshots, analyses, and cognition history over time.",
   },
   {
+    step: "connect_github",
+    title: "Connect your repository",
+    copy: "Link GitHub for webhooks and continuous re-analysis — or upload a zip in the next step.",
+    action: "github",
+  },
+  {
     step: "first_upload",
-    title: "Upload your first codebase",
-    copy: "Zip your repository root. The Truth Council will analyze structure, risk, and production readiness.",
+    title: "Run your first analysis",
+    copy: "Upload a repository zip or use your connected GitHub repo. The Truth Council surfaces what you did not know.",
+    action: "upload",
   },
   {
     step: "view_report",
@@ -153,8 +220,14 @@ function showOnboardingStep() {
   document.getElementById("onboarding-title").textContent = next.title;
   document.getElementById("onboarding-copy").textContent = next.copy;
   onboardingPanel.dataset.step = next.step;
+  onboardingPanel.dataset.action = next.action ?? "";
   onboardingPanel.classList.remove("hidden");
   appPanel.classList.add("hidden");
+
+  const ghDetails = document.querySelector(".github-connect");
+  if (ghDetails) {
+    ghDetails.open = next.action === "github";
+  }
   return true;
 }
 
@@ -217,6 +290,109 @@ function annotationsForFinding(findingId) {
   return state.collaboration.annotations.filter((a) => a.findingId === findingId);
 }
 
+const SEVERITY_RANK = {
+  "Critical blocker": 0,
+  "High-risk flaw": 1,
+  "Medium-priority weakness": 2,
+  "Low-priority debt": 3,
+  "Informational observation": 4,
+};
+
+function pickUnknownFindings(report, limit = 3) {
+  if (!report?.findings?.length) return [];
+  return [...report.findings]
+    .filter((f) => f.severity !== "Informational observation")
+    .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9))
+    .slice(0, limit);
+}
+
+function renderActivationMoment(report) {
+  const unknown = pickUnknownFindings(report, 3);
+  if (!unknown.length) {
+    activationMomentPanel.classList.add("hidden");
+    return;
+  }
+
+  const showHighlight =
+    state.onboarding?.firstAnalysisCompletedAt && !state.onboarding?.activationSurvey;
+  if (!showHighlight) {
+    activationMomentPanel.classList.add("hidden");
+    return;
+  }
+
+  document.getElementById("activation-moment-summary").textContent =
+    unknown.length >= 3
+      ? `Truth Council surfaced ${unknown.length} high-signal findings you can act on now.`
+      : `Truth Council surfaced ${unknown.length} actionable finding(s). Aim for ≥3 unknown insights on your first run.`;
+
+  document.getElementById("activation-moment-findings").innerHTML = unknown
+    .map(
+      (finding, index) => `
+      <article class="activation-finding-card">
+        <strong>${index + 1}. ${finding.title}</strong>
+        <p class="muted">${finding.severity} · ${finding.domain}</p>
+        <p>${finding.description}</p>
+      </article>`,
+    )
+    .join("");
+
+  activationMomentPanel.classList.remove("hidden");
+  trackTelemetry("activation.moment_viewed", {
+    count: unknown.length,
+    analysisId: state.analysisId,
+  });
+}
+
+function renderContradictions(report) {
+  const contradictions = [
+    ...(report?.consensus?.contradictions ?? []),
+    ...(report?.councilPhases?.flatMap((phase) =>
+      (phase.contradictions ?? []).map((c) => `${c.claim} ↔ ${c.challenge}`),
+    ) ?? []),
+  ].filter(Boolean);
+
+  if (!contradictions.length) {
+    contradictionsPanel.classList.add("hidden");
+    return;
+  }
+
+  document.getElementById("contradictions-list").innerHTML = contradictions
+    .map(
+      (text, index) => `
+      <article class="contradiction-card" data-contradiction-index="${index}">
+        <p>${text}</p>
+      </article>`,
+    )
+    .join("");
+
+  contradictionsPanel.classList.remove("hidden");
+  contradictionsPanel.querySelectorAll(".contradiction-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      trackTelemetry("contradiction.viewed", {
+        index: Number(card.dataset.contradictionIndex),
+        analysisId: state.analysisId,
+      });
+    });
+  });
+}
+
+function renderEvidenceList(finding) {
+  if (!finding.evidence?.length) return "";
+  return `<ul class="evidence-list">
+    ${finding.evidence
+      .map((evidence, index) => {
+        const label = `${evidence.filePath}${evidence.lineStart ? `:${evidence.lineStart}` : ""}`;
+        return `<li>
+          <button type="button" class="evidence-link" data-evidence-index="${index}" data-finding-id="${finding.id}">
+            ${label}
+          </button>
+          <pre class="evidence-snippet hidden" data-snippet-for="${finding.id}-${index}">${(evidence.snippet ?? "(no snippet)").replace(/</g, "&lt;")}</pre>
+        </li>`;
+      })
+      .join("")}
+  </ul>`;
+}
+
 function renderFindings(report) {
   if (!report?.findings?.length) {
     findingsPanel.classList.add("hidden");
@@ -236,6 +412,7 @@ function renderFindings(report) {
         </div>
         <p class="muted">${finding.domain} · ${finding.confidence}</p>
         <p>${finding.description}</p>
+        ${renderEvidenceList(finding)}
         ${review ? `<p class="review-status">Review: <strong>${review.status}</strong>${review.rationale ? ` — ${review.rationale}` : ""}</p>` : ""}
         ${
           annotations.length
@@ -258,6 +435,22 @@ function renderFindings(report) {
     .join("");
 
   findingsPanel.classList.remove("hidden");
+
+  findingsPanel.querySelectorAll(".evidence-link").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const findingId = btn.dataset.findingId;
+      const index = btn.dataset.evidenceIndex;
+      const snippet = findingsPanel.querySelector(
+        `[data-snippet-for="${findingId}-${index}"]`,
+      );
+      if (snippet) snippet.classList.toggle("hidden");
+      trackTelemetry("evidence.drilldown_clicked", {
+        findingId,
+        filePath: btn.textContent?.trim(),
+        analysisId: state.analysisId,
+      });
+    });
+  });
 
   findingsPanel.querySelectorAll(".annotate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -590,6 +783,8 @@ async function loadReportView() {
   state.report = payload.report;
   await loadCollaboration();
   renderScorecard(state.report);
+  renderActivationMoment(state.report);
+  renderContradictions(state.report);
   renderFindings(state.report);
   const markdown = await api(`/analyses/${state.analysisId}/report.md`);
   reportPreview.textContent = markdown.slice(0, 4000);
@@ -979,7 +1174,22 @@ document.getElementById("beta-form").addEventListener("submit", async (event) =>
 
 document.getElementById("onboarding-next").addEventListener("click", async () => {
   const step = onboardingPanel.dataset.step;
+  const action = onboardingPanel.dataset.action;
   if (!step) return;
+
+  if (action === "github") {
+    document.querySelector(".github-connect")?.scrollIntoView({ behavior: "smooth" });
+    appPanel.classList.remove("hidden");
+    onboardingPanel.classList.add("hidden");
+    return;
+  }
+  if (action === "upload") {
+    document.getElementById("upload-form")?.scrollIntoView({ behavior: "smooth" });
+    appPanel.classList.remove("hidden");
+    onboardingPanel.classList.add("hidden");
+    return;
+  }
+
   const payload = await api("/onboarding/step", {
     method: "POST",
     body: JSON.stringify({ step }),
@@ -1232,6 +1442,14 @@ document.getElementById("gh-connect-btn").addEventListener("click", async () => 
     2,
   );
   info.classList.remove("hidden");
+
+  if (state.user?.id) {
+    const payload = await api("/onboarding/step", {
+      method: "POST",
+      body: JSON.stringify({ step: "connect_github" }),
+    });
+    state.onboarding = payload.onboarding;
+  }
 });
 
 document.getElementById("upload-form").addEventListener("submit", async (event) => {
@@ -1343,13 +1561,29 @@ document.getElementById("export-tasks-linear").addEventListener("click", async (
   if (state.analysisId) await downloadExport(`/analyses/${state.analysisId}/export/tasks?format=linear`, "tasks-linear.json");
 });
 
-document.getElementById("upgrade-pro-btn").addEventListener("click", async () => {
+async function startProCheckout(plan = "pro") {
   if (!state.workspaceId) return;
+  trackTelemetry("billing.checkout_started", { plan, source: "upgrade_modal" });
   const payload = await api(`/workspaces/${state.workspaceId}/billing/checkout`, {
     method: "POST",
-    body: JSON.stringify({ plan: "pro", interval: "month" }),
+    body: JSON.stringify({ plan, interval: "month" }),
   });
   if (payload.checkoutUrl) window.location.href = payload.checkoutUrl;
+}
+
+document.getElementById("upgrade-pro-btn").addEventListener("click", () => startProCheckout("pro"));
+
+document.getElementById("upgrade-checkout-btn").addEventListener("click", async () => {
+  const plan = state.pendingUpgrade?.upgradePlan ?? state.pendingUpgrade?.upgrade?.plan ?? "pro";
+  try {
+    await startProCheckout(plan);
+  } catch (error) {
+    if (!error.upgrade) alert(error.message);
+  }
+});
+
+document.getElementById("upgrade-dismiss-btn").addEventListener("click", () => {
+  hideUpgradeModal();
 });
 
 document.getElementById("billing-portal-btn").addEventListener("click", async () => {

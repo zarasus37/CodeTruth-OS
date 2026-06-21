@@ -13,6 +13,7 @@ import { authenticate } from "./auth.js";
 import { store } from "./context.js";
 import { signReport, verifyReportSignature } from "./report-signing.js";
 import { recordAudit, requireWorkspaceAccess } from "./rbac.js";
+import { trackEvent } from "./telemetry-service.js";
 
 async function resolveAnalysisContext(analysisId: string, request: Parameters<typeof requireWorkspaceAccess>[0], reply: Parameters<typeof requireWorkspaceAccess>[1]) {
   const analysis = await store.getAnalysis(analysisId);
@@ -126,6 +127,13 @@ export async function registerCollaborationRoutes(app: FastifyInstance): Promise
         reviewedAt: new Date().toISOString(),
       };
       await store.saveFindingReview(review);
+      await trackEvent("finding.override", {
+        userId: request.user!.id,
+        workspaceId: ctx.project.workspaceId,
+        projectId: ctx.project.id,
+        analysisId: request.params.id,
+        properties: { findingId: request.params.findingId, status },
+      });
       await recordAudit({
         workspaceId: ctx.project.workspaceId,
         userId: request.user!.id,

@@ -34,6 +34,16 @@
       <button id="onboarding-next" class="primary">Continue</button>
     </section>
 
+    <section id="upgrade-panel" class="panel upgrade-panel hidden">
+      <h2 id="upgrade-title">Upgrade to Pro</h2>
+      <p id="upgrade-message" class="muted"></p>
+      <ul id="upgrade-value-props" class="upgrade-list"></ul>
+      <div class="invite-row">
+        <button id="upgrade-checkout-btn" class="primary">Start Pro checkout</button>
+        <button id="upgrade-dismiss-btn" class="ghost">Not now</button>
+      </div>
+    </section>
+
     <section id="activation-panel" class="panel hidden">
       <h2>Activation moment</h2>
       <p class="muted">Did your first analysis surface unknown issues you would act on?</p>
@@ -230,6 +240,21 @@
           <p id="spatial-selection" class="spatial-selection muted">Click a node to inspect.</p>
         </section>
         <div id="scorecard-panel" class="scorecard-panel hidden"></div>
+        <section id="activation-moment-panel" class="activation-moment-panel hidden">
+          <div class="panel-head">
+            <h2>Activation moment</h2>
+            <span class="muted">Previously unknown findings surfaced by Truth Council</span>
+          </div>
+          <p id="activation-moment-summary" class="muted"></p>
+          <div id="activation-moment-findings" class="activation-findings"></div>
+        </section>
+        <section id="contradictions-panel" class="contradictions-panel hidden">
+          <div class="panel-head">
+            <h2>Contradiction register</h2>
+            <span class="muted">Claims the council could not reconcile</span>
+          </div>
+          <div id="contradictions-list"></div>
+        </section>
         <div id="findings-panel" class="findings-panel hidden"></div>
         <div id="report-preview" class="report-preview muted">Run an analysis to generate a Truth Report.</div>
         <div class="actions">

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createId, type ActivationSurveyResponse, type OnboardingStep } from "@codetruth/core";
-import { computeBetaMetrics } from "@codetruth/telemetry";
+import { computeBetaMetrics, PHASE_B_GATES } from "@codetruth/telemetry";
 import { authenticate } from "./auth.js";
 import { BetaAccessError, ensureDefaultBetaInvite, redeemBetaInvite } from "./beta-service.js";
 import { store } from "./context.js";
@@ -11,6 +11,7 @@ import {
   recordFirstAnalysisCompleted,
   requireBetaAccess,
   submitActivationSurvey,
+  trackEvent,
 } from "./telemetry-service.js";
 
 function isBetaAdmin(request: FastifyRequest): boolean {
@@ -62,6 +63,28 @@ export async function registerPhaseBRoutes(app: FastifyInstance): Promise<void> 
       }
     },
   );
+
+  app.post<{
+    Body: {
+      event?: string;
+      workspaceId?: string;
+      projectId?: string;
+      analysisId?: string;
+      properties?: Record<string, unknown>;
+    };
+  }>("/telemetry/track", { preHandler: authenticate }, async (request, reply) => {
+    const event = request.body?.event?.trim();
+    if (!event) return reply.code(400).send({ error: "event is required" });
+
+    await trackEvent(event, {
+      userId: request.user!.id,
+      workspaceId: request.body?.workspaceId,
+      projectId: request.body?.projectId,
+      analysisId: request.body?.analysisId,
+      properties: request.body?.properties,
+    });
+    return { ok: true };
+  });
 
   app.get("/onboarding", { preHandler: authenticate }, async (request) => {
     const onboarding = await getOrCreateOnboarding(request.user!.id);
@@ -148,8 +171,9 @@ export async function registerPhaseBRoutes(app: FastifyInstance): Promise<void> 
     return {
       metrics,
       targets: {
+        activationRate: PHASE_B_GATES.activationRate,
+        habitFormationRate: PHASE_B_GATES.habitFormationRate,
         activationMomentRate: 0.7,
-        habitFormationRate: 0.6,
         medianMinutesToFirstInsight: 12,
       },
       generatedAt: new Date().toISOString(),

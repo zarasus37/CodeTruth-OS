@@ -56,6 +56,7 @@ export async function completeOnboardingStep(userId: string, step: OnboardingSte
     "welcome",
     "create_workspace",
     "create_project",
+    "connect_github",
     "first_upload",
     "view_report",
     "activation_survey",
