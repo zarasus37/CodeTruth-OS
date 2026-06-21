@@ -1,4 +1,9 @@
-import { createId, createEvidenceFromSymbol, enrichEvidenceRecord } from "@codetruth/core";
+import {
+  createId,
+  createEvidenceFromSymbol,
+  enrichEvidenceRecord,
+  initialFindingLifecycle,
+} from "@codetruth/core";
 import type {
   ArchitectureGraph,
   BuildStateScorecard,
@@ -101,6 +106,7 @@ function makeFinding(input: {
     evidence: evidenceChain,
     evidenceChain,
     remediationPath: `Address ${input.title.toLowerCase()} before production deployment.`,
+    lifecycleState: initialFindingLifecycle(),
   };
 }
 

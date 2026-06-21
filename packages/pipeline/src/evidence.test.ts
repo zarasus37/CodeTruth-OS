@@ -135,6 +135,7 @@ describe("normalizeFindingsForCouncil", () => {
     expect(findings).toHaveLength(2);
     expect(findings.every((f) => f.evidenceChain.length >= 1)).toBe(true);
     expect(corrected).toBe(2);
+    expect(findings.every((f) => f.lifecycleState === "EvidenceEnforced")).toBe(true);
   });
 
   it("flags Critical/High findings with weak evidence", () => {

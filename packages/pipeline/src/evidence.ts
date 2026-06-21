@@ -1,4 +1,11 @@
-import { createId, createEvidenceFromFinding, createEvidenceFromSymbol, enrichEvidenceRecord } from "@codetruth/core";
+import {
+  advanceFinding,
+  createId,
+  createEvidenceFromFinding,
+  createEvidenceFromSymbol,
+  enrichEvidenceRecord,
+  initialFindingLifecycle,
+} from "@codetruth/core";
 import {
   assertConfidenceLevel,
   confidenceMeetsMinimum,
@@ -145,7 +152,10 @@ export function normalizeFindingsForCouncil(
       corrected += 1;
     }
     if (next.flaggedForWeakEvidence) flagged += 1;
-    return next;
+    return advanceFinding(
+      { ...next, lifecycleState: next.lifecycleState ?? initialFindingLifecycle() },
+      "EvidenceEnforced",
+    );
   });
 
   return { findings: normalized, corrected, flagged };
@@ -167,9 +177,13 @@ export function degradedUnknownFinding(
     evidenceChain: [],
   };
   const chain = [absenceEvidence(snapshot, placeholder)];
-  return {
-    ...placeholder,
-    evidence: chain,
-    evidenceChain: chain,
-  };
+  return advanceFinding(
+    {
+      ...placeholder,
+      evidence: chain,
+      evidenceChain: chain,
+      lifecycleState: initialFindingLifecycle(),
+    },
+    "EvidenceEnforced",
+  );
 }

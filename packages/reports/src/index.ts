@@ -93,6 +93,15 @@ function renderDiagnosticsSection(diagnostics?: PipelineDiagnostics): string[] {
     lines.push("");
   }
 
+  if (diagnostics.incrementalSavingsPercent != null) {
+    lines.push(
+      `### Incremental analysis`,
+      "",
+      `- **Compute savings:** ${diagnostics.incrementalSavingsPercent}%`,
+      "",
+    );
+  }
+
   if (diagnostics.isolatedTargets?.length) {
     lines.push("### Isolated targets", "");
     for (const target of diagnostics.isolatedTargets) {

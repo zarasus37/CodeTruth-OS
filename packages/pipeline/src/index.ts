@@ -1,13 +1,14 @@
-import type {
-  AnalysisStage,
-  ArchitectureGraph,
-  BuildStateScorecard,
-  IncrementalComputeMetrics,
-  MarketplaceAnalyzerRun,
-  PipelineArtifacts,
-  PipelineStreamEvent,
-  SnapshotRecord,
-  SpatialGraph,
+import {
+  advanceFindings,
+  type AnalysisStage,
+  type ArchitectureGraph,
+  type BuildStateScorecard,
+  type IncrementalComputeMetrics,
+  type MarketplaceAnalyzerRun,
+  type PipelineArtifacts,
+  type PipelineStreamEvent,
+  type SnapshotRecord,
+  type SpatialGraph,
 } from "@codetruth/core";
 import { evaluateProject } from "@codetruth/evaluation";
 import { diffSnapshots } from "@codetruth/ingestion";
@@ -371,6 +372,7 @@ export async function runPipeline(
   if (council.adjustedFindings?.length) {
     findings = council.adjustedFindings;
   }
+  findings = advanceFindings(findings, "CouncilReviewed");
   diagnostics.confidenceSummary = diagnostics.confidenceAfterCouncil;
 
   await report("truth_council", 85, {
@@ -388,6 +390,12 @@ export async function runPipeline(
   );
 
   const taskCount = Object.values(roadmap.tracks).flat().length;
+  findings = advanceFindings(findings, "Finalized");
+
+  if (incrementalMetrics?.savingsPercent != null) {
+    diagnostics.incrementalSavingsPercent = incrementalMetrics.savingsPercent;
+  }
+
   await report("planning", 95, { taskCount, findingCount: findings.length });
 
   await report("completed", 100, {

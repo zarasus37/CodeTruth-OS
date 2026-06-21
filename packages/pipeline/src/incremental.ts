@@ -1,4 +1,10 @@
-import type { DependencyEdge, IncrementalComputeMetrics, ParserStats, SnapshotDiff, SymbolRecord } from "@codetruth/core";
+import type {
+  DependencyEdge,
+  IncrementalComputeMetrics,
+  ParserStats,
+  SnapshotDiff,
+  SymbolRecord,
+} from "@codetruth/core";
 
 export interface ParseSlice {
   symbols: SymbolRecord[];
@@ -74,6 +80,65 @@ export function mergeIncrementalParse(input: MergeIncrementalInput): {
         input.diff.changeRatio <= 0.1 ? savingsPercent >= INCREMENTAL_SAVINGS_TARGET_PERCENT : undefined,
     },
   };
+}
+
+/** Compare symbol records for incremental equivalence (unchanged files must match exactly). */
+export function symbolsEquivalent(a: SymbolRecord, b: SymbolRecord): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.kind === b.kind &&
+    a.filePath === b.filePath &&
+    a.line === b.line &&
+    a.lineEnd === b.lineEnd &&
+    a.confidence === b.confidence &&
+    JSON.stringify(a.evidenceChain) === JSON.stringify(b.evidenceChain)
+  );
+}
+
+/**
+ * Verify symbols on unchanged files are identical between full (base) and incremental merge.
+ */
+export function verifyUnchangedFileEquivalence(
+  base: ParseSlice,
+  merged: ParseSlice,
+  diff: SnapshotDiff,
+): { equal: boolean; mismatches: string[] } {
+  const changed = changedFilePaths(diff);
+  const mismatches: string[] = [];
+
+  const baseByPath = new Map<string, SymbolRecord[]>();
+  for (const symbol of base.symbols) {
+    if (changed.has(symbol.filePath)) continue;
+    const list = baseByPath.get(symbol.filePath) ?? [];
+    list.push(symbol);
+    baseByPath.set(symbol.filePath, list);
+  }
+
+  const mergedByPath = new Map<string, SymbolRecord[]>();
+  for (const symbol of merged.symbols) {
+    if (changed.has(symbol.filePath)) continue;
+    const list = mergedByPath.get(symbol.filePath) ?? [];
+    list.push(symbol);
+    mergedByPath.set(symbol.filePath, list);
+  }
+
+  for (const [filePath, baseSymbols] of baseByPath) {
+    const mergedSymbols = mergedByPath.get(filePath);
+    if (!mergedSymbols || mergedSymbols.length !== baseSymbols.length) {
+      mismatches.push(`${filePath}: symbol count differs`);
+      continue;
+    }
+    const sortedBase = [...baseSymbols].sort((a, b) => a.id.localeCompare(b.id));
+    const sortedMerged = [...mergedSymbols].sort((a, b) => a.id.localeCompare(b.id));
+    for (let i = 0; i < sortedBase.length; i++) {
+      if (!symbolsEquivalent(sortedBase[i]!, sortedMerged[i]!)) {
+        mismatches.push(`${filePath}: symbol ${sortedBase[i]!.id} differs after incremental merge`);
+      }
+    }
+  }
+
+  return { equal: mismatches.length === 0, mismatches };
 }
 
 export function fullAnalysisMetrics(filesTotal: number): IncrementalComputeMetrics {

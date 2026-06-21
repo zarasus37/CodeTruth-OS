@@ -488,7 +488,23 @@ export interface PipelineDiagnostics {
   weakEvidenceFlags?: number;
   /** File paths and analyzer ids that triggered isolation or fallback. */
   isolatedTargets?: string[];
+  /** Incremental parse savings (0–100). Present when incremental mode ran. */
+  incrementalSavingsPercent?: number;
 }
+
+export type FindingLifecycleState =
+  | "Created"
+  | "EvidenceEnforced"
+  | "CouncilReviewed"
+  | "Finalized";
+
+export type SnapshotLifecycleState = "Captured" | "Parsed" | "Analyzed" | "Archived";
+
+export type ArchitectureGraphLifecycleState =
+  | "Reconstructed"
+  | "Spatialized"
+  | "CouncilReady"
+  | "Finalized";
 
 export interface Finding {
   id: string;
@@ -505,6 +521,8 @@ export interface Finding {
   contradicted?: boolean;
   /** Set when Critical/High severity lacks minimum confidence support. */
   flaggedForWeakEvidence?: boolean;
+  /** Pipeline lifecycle — Created → EvidenceEnforced → CouncilReviewed → Finalized. */
+  lifecycleState?: FindingLifecycleState;
 }
 
 export interface BuildStateScorecard {
