@@ -1,6 +1,13 @@
 import type { DependencyEdge, SymbolRecord } from "@codetruth/core";
 import { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
-import { endLineOf, lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
+import {
+  endLineOf,
+  lineOf,
+  nodeName,
+  nodeSnippet,
+  parseTree,
+  walkTree,
+} from "./tree-sitter-runtime.js";
 
 export function parseRustFile(
   filePath: string,
@@ -25,6 +32,7 @@ export function parseRustFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -41,6 +49,7 @@ export function parseRustFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -57,6 +66,7 @@ export function parseRustFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -73,6 +83,7 @@ export function parseRustFile(
             filePath,
             line: lineOf(node),
             lineEnd: endLineOf(node),
+            snippet: nodeSnippet(node),
           }),
         );
       }
@@ -82,6 +93,7 @@ export function parseRustFile(
       const pathNode = node.childForFieldName("argument");
       const target = pathNode?.text?.split("::")[0]?.trim();
       if (target) {
+        const snippet = nodeSnippet(node) || pathNode?.text;
         dependencies.push(
           makeDependency({
             ctx: treeCtx,
@@ -89,6 +101,7 @@ export function parseRustFile(
             to: target,
             kind: "imports",
             line: lineOf(node),
+            snippet,
           }),
         );
         symbols.push(
@@ -98,6 +111,7 @@ export function parseRustFile(
             kind: "import",
             filePath,
             line: lineOf(node),
+            snippet,
           }),
         );
       }
