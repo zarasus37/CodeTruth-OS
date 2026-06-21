@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import type { SnapshotRecord } from "@codetruth/core";
 import { diffSnapshots } from "@codetruth/ingestion";
 import { parseSnapshot } from "@codetruth/parsing";
+import { enforceFeatureGate } from "./billing-service.js";
 import { authenticate } from "./auth.js";
 import { snapshotRoot, store } from "./context.js";
 import { requireWorkspaceAccess } from "./rbac.js";
@@ -33,6 +34,7 @@ export async function registerSnapshotRoutes(app: FastifyInstance): Promise<void
 
       const member = await requireWorkspaceAccess(request, reply, project.workspaceId, "report:view");
       if (!member) return;
+      if (!(await enforceFeatureGate(project.workspaceId, "snapshot_history", reply))) return;
 
       const baseId = request.query.base ?? target.parentSnapshotId ?? project.latestSnapshotId;
       if (!baseId || baseId === target.id) {

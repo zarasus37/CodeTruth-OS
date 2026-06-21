@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { enforceFeatureGate } from "./billing-service.js";
 import { authenticate } from "./auth.js";
 import { buildWorkspaceInstitutionalView } from "./cognition-helpers.js";
 import { store } from "./context.js";
@@ -23,6 +24,7 @@ export async function registerPortfolioRoutes(app: FastifyInstance): Promise<voi
         "report:view",
       );
       if (!member) return;
+      if (!(await enforceFeatureGate(request.params.workspaceId, "portfolio", reply))) return;
 
       const view = await buildWorkspaceInstitutionalView(request.params.workspaceId);
       const { compliance, trendSeries, recentActivity, schedules, ...portfolio } = view;

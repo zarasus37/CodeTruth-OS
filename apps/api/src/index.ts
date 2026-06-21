@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import staticPlugin from "@fastify/static";
@@ -17,7 +18,20 @@ import { isLlmEnabled } from "@codetruth/llm";
 import { closeQueueConnections, isQueueEnabled } from "@codetruth/queue";
 import { createActivityEvent } from "@codetruth/cognition";
 import { persistSnapshot, startAnalysis } from "./analysis.js";
+import {
+  enforceAnalysisGate,
+  enforceFeatureGate,
+  enforceFileUploadGate,
+  enforceProjectCreateGate,
+  enforceSeatInviteGate,
+  getOrCreateSubscription,
+  recordAnalysisUsage,
+  recordProjectCreatedUsage,
+} from "./billing-service.js";
+import { registerBillingRoutes } from "./billing-routes.js";
 import { authenticate, findOrCreateUser, refreshUserToken } from "./auth.js";
+import { isDevEmailLoginEnabled } from "./oauth.js";
+import { registerOAuthRoutes } from "./oauth-routes.js";
 import { registerCollaborationRoutes } from "./collaboration-routes.js";
 import { dataRoot, snapshotRoot, storageBackend, store, uploadRoot, webRoot } from "./context.js";
 import { registerGitHubRoutes } from "./github-routes.js";
@@ -30,6 +44,12 @@ import { registerSpatialRoutes } from "./spatial-routes.js";
 import { registerStreamRoutes } from "./stream-routes.js";
 import { pingRedis } from "./integrations.js";
 import { recordAudit, requireWorkspaceAccess } from "./rbac.js";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    rawBody?: Buffer;
+  }
+}
 
 async function extractUpload(buffer: Buffer): Promise<string> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "codetruth-upload-"));
@@ -45,8 +65,22 @@ async function bootstrap() {
   await store.init();
 
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
+  await app.register(cookie);
+  await app.register(cors, { origin: true, credentials: true });
   await app.register(multipart, { limits: { fileSize: 250 * 1024 * 1024 } });
+
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (request, body, done) => {
+      try {
+        request.rawBody = body as Buffer;
+        done(null, JSON.parse((body as Buffer).toString("utf8")));
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
 
   app.get("/health", async () => {
     const redisConfigured = isQueueEnabled();
@@ -89,9 +123,21 @@ async function bootstrap() {
       "live-reanalysis",
       "institutional-compliance",
       "portfolio-trends",
+      "oauth",
+      "stripe-billing",
+      "feature-gates",
+      "usage-metering",
       isGitHubAppEnabled() ? "github-app" : "github-pat",
       isLlmEnabled() ? "llm-truth-council" : "heuristic-truth-council",
     ],
+    billing: {
+      stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
+      oauth: {
+        github: Boolean(process.env.GITHUB_OAUTH_CLIENT_ID),
+        google: Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID),
+        devEmail: isDevEmailLoginEnabled(),
+      },
+    },
   };
   });
 
@@ -107,6 +153,10 @@ async function bootstrap() {
   });
 
   app.post<{ Body: { email?: string; displayName?: string } }>("/auth/session", async (request, reply) => {
+    if (!isDevEmailLoginEnabled()) {
+      return reply.code(403).send({ error: "Dev email login is disabled. Use OAuth." });
+    }
+
     const email = request.body?.email?.trim();
     if (!email) return reply.code(400).send({ error: "email is required" });
 
@@ -172,6 +222,7 @@ async function bootstrap() {
 
       await store.saveWorkspace(workspace);
       await store.saveMember(membership);
+      await getOrCreateSubscription(workspace.id);
       await recordAudit({
         workspaceId: workspace.id,
         userId: request.user!.id,
@@ -245,6 +296,7 @@ async function bootstrap() {
     async (request, reply) => {
       const member = await requireWorkspaceAccess(request, reply, request.params.id, "workspace:invite");
       if (!member) return;
+      if (!(await enforceSeatInviteGate(request.params.id, reply))) return;
 
       const email = request.body?.email?.trim();
       const role = request.body?.role ?? "viewer";
@@ -313,6 +365,7 @@ async function bootstrap() {
         "project:create",
       );
       if (!member) return;
+      if (!(await enforceProjectCreateGate(request.params.workspaceId, reply))) return;
 
       const project: Project = {
         id: createId("project"),
@@ -321,6 +374,7 @@ async function bootstrap() {
         createdAt: new Date().toISOString(),
       };
       await store.saveProject(project);
+      await recordProjectCreatedUsage(request.params.workspaceId);
       await recordAudit({
         workspaceId: request.params.workspaceId,
         userId: request.user!.id,
@@ -344,6 +398,7 @@ async function bootstrap() {
         "analysis:trigger",
       );
       if (!member) return;
+      if (!(await enforceAnalysisGate(request.params.workspaceId, "upload", reply))) return;
 
       const project = await store.getProject(request.params.projectId);
       if (!project || project.workspaceId !== request.params.workspaceId) {
@@ -364,6 +419,10 @@ async function bootstrap() {
           destinationRoot: snapshotRoot,
           parentSnapshotId,
         });
+        if (!(await enforceFileUploadGate(request.params.workspaceId, snapshot.fileCount, reply))) {
+          return;
+        }
+
         await persistSnapshot(snapshot);
 
         project.latestSnapshotId = snapshot.id;
@@ -374,6 +433,7 @@ async function bootstrap() {
           triggeredBy: "upload",
           incrementalBaseSnapshotId: parentSnapshotId,
         });
+        await recordAnalysisUsage(request.params.workspaceId);
         await store.appendCognitionActivity(
           createActivityEvent({
             workspaceId: request.params.workspaceId,
@@ -429,6 +489,7 @@ async function bootstrap() {
 
       const member = await requireWorkspaceAccess(request, reply, project.workspaceId, "report:view");
       if (!member) return;
+      if (!(await enforceFeatureGate(project.workspaceId, "exports", reply))) return;
 
       const report = (await buildFullReport(analysis.id))!;
       const format = request.query.format ?? "json";
@@ -454,6 +515,7 @@ async function bootstrap() {
 
       const member = await requireWorkspaceAccess(request, reply, project.workspaceId, "report:view");
       if (!member) return;
+      if (!(await enforceFeatureGate(project.workspaceId, "exports", reply))) return;
 
       const report = (await buildFullReport(analysis.id))!;
       reply.header("content-type", "text/markdown; charset=utf-8");
@@ -473,6 +535,7 @@ async function bootstrap() {
 
       const member = await requireWorkspaceAccess(request, reply, project.workspaceId, "report:view");
       if (!member) return;
+      if (!(await enforceFeatureGate(project.workspaceId, "exports", reply))) return;
 
       const report = (await buildFullReport(analysis.id))!;
       reply.header("content-type", "application/json; charset=utf-8");
@@ -480,6 +543,8 @@ async function bootstrap() {
     },
   );
 
+  await registerOAuthRoutes(app);
+  await registerBillingRoutes(app);
   await registerCollaborationRoutes(app);
   await registerStreamRoutes(app);
   await registerSnapshotRoutes(app);

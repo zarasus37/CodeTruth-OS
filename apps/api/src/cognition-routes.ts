@@ -6,6 +6,11 @@ import {
   computeNextRunAt,
   createActivityEvent,
 } from "@codetruth/cognition";
+import {
+  enforceAnalysisGate,
+  enforceFeatureGate,
+  recordAnalysisUsage,
+} from "./billing-service.js";
 import { authenticate } from "./auth.js";
 import { startAnalysis } from "./analysis.js";
 import { buildWorkspaceInstitutionalView } from "./cognition-helpers.js";
@@ -140,6 +145,7 @@ export async function registerCognitionRoutes(app: FastifyInstance): Promise<voi
         "report:view",
       );
       if (!member) return;
+      if (!(await enforceFeatureGate(request.params.workspaceId, "portfolio", reply))) return;
 
       return buildWorkspaceInstitutionalView(request.params.workspaceId);
     },
@@ -175,6 +181,7 @@ export async function registerCognitionRoutes(app: FastifyInstance): Promise<voi
         "analysis:trigger",
       );
       if (!member) return;
+      if (!(await enforceFeatureGate(request.params.workspaceId, "live_reanalysis", reply))) return;
 
       const project = await store.getProject(request.params.projectId);
       if (!project || project.workspaceId !== request.params.workspaceId) {
@@ -246,6 +253,7 @@ export async function registerCognitionRoutes(app: FastifyInstance): Promise<voi
         "analysis:trigger",
       );
       if (!member) return;
+      if (!(await enforceAnalysisGate(request.params.workspaceId, "reanalysis", reply))) return;
 
       const project = await store.getProject(request.params.projectId);
       if (!project || project.workspaceId !== request.params.workspaceId) {
@@ -265,6 +273,7 @@ export async function registerCognitionRoutes(app: FastifyInstance): Promise<voi
         triggeredBy: "reanalysis",
         incrementalBaseSnapshotId: previous?.snapshotId,
       });
+      await recordAnalysisUsage(request.params.workspaceId);
 
       await store.appendCognitionActivity(
         createActivityEvent({

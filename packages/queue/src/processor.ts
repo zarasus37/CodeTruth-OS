@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AnalysisJob, PipelineStreamEvent, SnapshotRecord } from "@codetruth/core";
+import { createEmptyUsage, currentUsagePeriod, incrementUsage } from "@codetruth/billing";
 import { activityFromAnalysis, createActivityEvent } from "@codetruth/cognition";
 import { runPipeline } from "@codetruth/pipeline";
 import type { DataStore } from "@codetruth/storage";
@@ -65,6 +66,7 @@ export async function processAnalysisJob(
     analysis.artifacts = artifacts;
     await options.store.saveAnalysis(analysis);
     await recordAnalysisActivity(analysis, options.store, "analysis_completed");
+    await recordLlmCouncilUsageIfNeeded(analysis, options.store);
     return analysis;
   } catch (error) {
     analysis.status = "failed";
@@ -73,6 +75,21 @@ export async function processAnalysisJob(
     await recordAnalysisActivity(analysis, options.store, "analysis_failed");
     throw error;
   }
+}
+
+async function recordLlmCouncilUsageIfNeeded(
+  analysis: AnalysisJob,
+  store: ProcessorOptions["store"],
+): Promise<void> {
+  if (!analysis.artifacts?.llmPowered) return;
+  const project = await store.getProject(analysis.projectId);
+  if (!project) return;
+
+  const period = currentUsagePeriod();
+  const usage =
+    (await store.getWorkspaceUsage(project.workspaceId, period)) ??
+    createEmptyUsage(project.workspaceId, period);
+  await store.saveWorkspaceUsage(incrementUsage(usage, "llmCouncilRuns"));
 }
 
 async function recordAnalysisActivity(

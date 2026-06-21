@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AnalysisJob,
   AuditLogEntry,
+  AuthSession,
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
@@ -14,6 +15,8 @@ import type {
   User,
   Workspace,
   WorkspaceMember,
+  WorkspaceSubscription,
+  WorkspaceUsage,
 } from "@codetruth/core";
 import type { DataStore } from "./interface.js";
 
@@ -64,6 +67,42 @@ export class JsonStore implements DataStore {
     if (index >= 0) users[index] = user;
     else users.push(user);
     await this.writeCollection("users.json", users);
+  }
+
+  async getUserByGithubId(githubId: string): Promise<User | undefined> {
+    return (await this.listUsers()).find((user) => user.githubId === githubId);
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    return (await this.listUsers()).find((user) => user.googleId === googleId);
+  }
+
+  async getSessionByToken(token: string): Promise<AuthSession | undefined> {
+    return (await this.readCollection<AuthSession>("auth_sessions.json")).find(
+      (session) => session.token === token,
+    );
+  }
+
+  async saveSession(session: AuthSession): Promise<void> {
+    const sessions = await this.readCollection<AuthSession>("auth_sessions.json");
+    const index = sessions.findIndex((item) => item.id === session.id);
+    if (index >= 0) sessions[index] = session;
+    else sessions.push(session);
+    await this.writeCollection("auth_sessions.json", sessions);
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    const sessions = (await this.readCollection<AuthSession>("auth_sessions.json")).filter(
+      (session) => session.token !== token,
+    );
+    await this.writeCollection("auth_sessions.json", sessions);
+  }
+
+  async deleteExpiredSessions(before = new Date().toISOString()): Promise<void> {
+    const sessions = (await this.readCollection<AuthSession>("auth_sessions.json")).filter(
+      (session) => session.expiresAt > before,
+    );
+    await this.writeCollection("auth_sessions.json", sessions);
   }
 
   async listWorkspaces(): Promise<Workspace[]> {
@@ -297,5 +336,42 @@ export class JsonStore implements DataStore {
       (policy) => !(policy.workspaceId === workspaceId && policy.id === policyId),
     );
     await this.writeCollection("custom_compliance_policies.json", policies);
+  }
+
+  async getWorkspaceSubscription(workspaceId: string): Promise<WorkspaceSubscription | undefined> {
+    return (await this.readCollection<WorkspaceSubscription>("workspace_subscriptions.json")).find(
+      (subscription) => subscription.workspaceId === workspaceId,
+    );
+  }
+
+  async saveWorkspaceSubscription(subscription: WorkspaceSubscription): Promise<void> {
+    const subscriptions = await this.readCollection<WorkspaceSubscription>(
+      "workspace_subscriptions.json",
+    );
+    const index = subscriptions.findIndex(
+      (item) => item.workspaceId === subscription.workspaceId,
+    );
+    if (index >= 0) subscriptions[index] = subscription;
+    else subscriptions.push(subscription);
+    await this.writeCollection("workspace_subscriptions.json", subscriptions);
+  }
+
+  async getWorkspaceUsage(
+    workspaceId: string,
+    period: string,
+  ): Promise<WorkspaceUsage | undefined> {
+    return (await this.readCollection<WorkspaceUsage>("workspace_usage.json")).find(
+      (usage) => usage.workspaceId === workspaceId && usage.period === period,
+    );
+  }
+
+  async saveWorkspaceUsage(usage: WorkspaceUsage): Promise<void> {
+    const records = await this.readCollection<WorkspaceUsage>("workspace_usage.json");
+    const index = records.findIndex(
+      (item) => item.workspaceId === usage.workspaceId && item.period === usage.period,
+    );
+    if (index >= 0) records[index] = usage;
+    else records.push(usage);
+    await this.writeCollection("workspace_usage.json", records);
   }
 }

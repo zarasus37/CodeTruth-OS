@@ -12,17 +12,19 @@ import {
   type GitHubInstallationEvent,
   type GitHubPushEvent,
 } from "@codetruth/github";
+import { assertAnalysisAllowed } from "@codetruth/billing";
+import {
+  BillingGateError,
+  buildGateContext,
+  enforceFeatureGate,
+  recordAnalysisUsage,
+  sendBillingError,
+} from "./billing-service.js";
 import { persistSnapshot, startAnalysis } from "./analysis.js";
 import { authenticate } from "./auth.js";
 import { ingestGitHubRepository } from "./github-ingest.js";
 import { store } from "./context.js";
 import { recordAudit, requireWorkspaceAccess } from "./rbac.js";
-
-declare module "fastify" {
-  interface FastifyRequest {
-    rawBody?: Buffer;
-  }
-}
 
 function publicApiUrl(request: FastifyRequest): string {
   return (
@@ -32,19 +34,6 @@ function publicApiUrl(request: FastifyRequest): string {
 }
 
 export async function registerGitHubRoutes(app: FastifyInstance): Promise<void> {
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "buffer" },
-    (request, body, done) => {
-      try {
-        request.rawBody = body as Buffer;
-        done(null, JSON.parse((body as Buffer).toString("utf8")));
-      } catch (error) {
-        done(error as Error, undefined);
-      }
-    },
-  );
-
   app.post<{
     Params: { workspaceId: string; projectId: string };
     Body: {
@@ -66,6 +55,7 @@ export async function registerGitHubRoutes(app: FastifyInstance): Promise<void> 
         "analysis:trigger",
       );
       if (!member) return;
+      if (!(await enforceFeatureGate(request.params.workspaceId, "webhooks", reply))) return;
 
       const project = await store.getProject(request.params.projectId);
       if (!project || project.workspaceId !== request.params.workspaceId) {
@@ -171,6 +161,16 @@ export async function registerGitHubRoutes(app: FastifyInstance): Promise<void> 
       return reply.code(404).send({ error: "No connected project for repository" });
     }
 
+    try {
+      const ctx = await buildGateContext(project.workspaceId);
+      assertAnalysisAllowed(ctx, "github_webhook");
+    } catch (error) {
+      if (error instanceof BillingGateError) {
+        return sendBillingError(reply, error);
+      }
+      throw error;
+    }
+
     const webhookSecret =
       project.github.authMode === "app" && appConfig?.webhookSecret
         ? appConfig.webhookSecret
@@ -201,6 +201,7 @@ export async function registerGitHubRoutes(app: FastifyInstance): Promise<void> 
         triggeredBy: "github_webhook",
         incrementalBaseSnapshotId: result.snapshot.parentSnapshotId,
       });
+      await recordAnalysisUsage(project.workspaceId);
 
       await recordAudit({
         workspaceId: project.workspaceId,

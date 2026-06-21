@@ -12,25 +12,71 @@ model User {
   email             String            @unique
   displayName       String            @map("display_name")
   apiToken          String            @unique @map("api_token")
+  authProvider      String?           @map("auth_provider")
+  githubId          String?           @unique @map("github_id")
+  googleId          String?           @unique @map("google_id")
+  avatarUrl         String?           @map("avatar_url")
   createdAt         DateTime          @default(now()) @map("created_at")
   memberships       WorkspaceMember[]
   auditEntries      AuditLogEntry[]
   createdWorkspaces Workspace[]       @relation("WorkspaceCreator")
+  sessions          AuthSession[]
 
   @@map("users")
 }
 
+model AuthSession {
+  id        String   @id
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
 model Workspace {
-  id           String            @id
+  id           String                 @id
   name         String
-  createdAt    DateTime          @default(now()) @map("created_at")
-  createdBy    String            @map("created_by")
-  creator      User              @relation("WorkspaceCreator", fields: [createdBy], references: [id])
+  createdAt    DateTime               @default(now()) @map("created_at")
+  createdBy    String                 @map("created_by")
+  creator      User                   @relation("WorkspaceCreator", fields: [createdBy], references: [id])
   members      WorkspaceMember[]
   projects     Project[]
   auditEntries AuditLogEntry[]
+  subscription WorkspaceSubscription?
+  usageRecords WorkspaceUsage[]
 
   @@map("workspaces")
+}
+
+model WorkspaceSubscription {
+  workspaceId          String    @id @map("workspace_id")
+  plan                 String
+  status               String
+  stripeCustomerId     String?   @map("stripe_customer_id")
+  stripeSubscriptionId String?   @map("stripe_subscription_id")
+  currentPeriodEnd     DateTime? @map("current_period_end")
+  seatCount            Int?      @map("seat_count")
+  updatedAt            DateTime  @map("updated_at")
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_subscriptions")
+}
+
+model WorkspaceUsage {
+  workspaceId      String   @map("workspace_id")
+  period           String
+  analysesCount    Int      @default(0) @map("analyses_count")
+  llmCouncilRuns   Int      @default(0) @map("llm_council_runs")
+  projectsCreated  Int      @default(0) @map("projects_created")
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, period])
+  @@map("workspace_usage")
 }
 
 model WorkspaceMember {

@@ -1,5 +1,5 @@
 {
-  "name": "@codetruth/queue",
+  "name": "@codetruth/billing",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,12 +16,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@codetruth/billing": "*",
-    "@codetruth/cognition": "*",
-    "@codetruth/core": "*",
-    "@codetruth/pipeline": "*",
-    "@codetruth/storage": "*",
-    "bullmq": "^5.41.7",
-    "ioredis": "^5.5.0"
+    "@codetruth/core": "*"
   }
 }

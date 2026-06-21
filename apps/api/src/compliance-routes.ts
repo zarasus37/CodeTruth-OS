@@ -7,6 +7,7 @@ import {
   type SeverityLevel,
 } from "@codetruth/core";
 import { COMPLIANCE_FRAMEWORKS, renderAuditorReport, renderComplianceCsv } from "@codetruth/compliance";
+import { enforceFeatureGate } from "./billing-service.js";
 import { authenticate } from "./auth.js";
 import { buildWorkspaceInstitutionalView } from "./cognition-helpers.js";
 import { store } from "./context.js";
@@ -72,6 +73,9 @@ export async function registerComplianceRoutes(app: FastifyInstance): Promise<vo
         "report:view",
       );
       if (!member) return;
+      if (!(await enforceFeatureGate(request.params.workspaceId, "compliance_audit_export", reply))) {
+        return;
+      }
 
       const view = await buildWorkspaceInstitutionalView(request.params.workspaceId);
       const format = request.query.format?.toLowerCase() ?? "csv";

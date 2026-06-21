@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { enforceFeatureGate } from "./billing-service.js";
 import { authenticate } from "./auth.js";
 import { store } from "./context.js";
 import { requireWorkspaceAccess } from "./rbac.js";
@@ -18,6 +19,7 @@ export async function registerSpatialRoutes(app: FastifyInstance): Promise<void>
 
       const member = await requireWorkspaceAccess(request, reply, project.workspaceId, "report:view");
       if (!member) return;
+      if (!(await enforceFeatureGate(project.workspaceId, "spatial_navigator", reply))) return;
 
       return {
         analysisId: analysis.id,

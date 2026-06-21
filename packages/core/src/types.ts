@@ -548,12 +548,68 @@ export type Permission =
   | "report:approve"
   | "task:export";
 
+export type AuthProvider = "email" | "github" | "google";
+
+export type SubscriptionPlan = "free" | "pro" | "team" | "enterprise";
+
+export type SubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled"
+  | "incomplete";
+
+export type BillingFeature =
+  | "continuous_analysis"
+  | "webhooks"
+  | "live_reanalysis"
+  | "spatial_navigator"
+  | "exports"
+  | "snapshot_history"
+  | "llm_council"
+  | "portfolio"
+  | "compliance_audit_export"
+  | "rbac_advanced"
+  | "team_seats";
+
 export interface User {
   id: string;
   email: string;
   displayName: string;
   apiToken: string;
   createdAt: string;
+  authProvider?: AuthProvider;
+  githubId?: string;
+  googleId?: string;
+  avatarUrl?: string;
+}
+
+export interface AuthSession {
+  id: string;
+  userId: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface WorkspaceSubscription {
+  workspaceId: string;
+  plan: SubscriptionPlan;
+  status: SubscriptionStatus;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  currentPeriodEnd?: string;
+  seatCount?: number;
+  updatedAt: string;
+}
+
+export interface WorkspaceUsage {
+  workspaceId: string;
+  /** Billing period key, e.g. 2026-06 */
+  period: string;
+  analysesCount: number;
+  llmCouncilRuns: number;
+  projectsCreated: number;
 }
 
 export interface Workspace {

@@ -1,6 +1,7 @@
 import type {
   AnalysisJob,
   AuditLogEntry,
+  AuthSession,
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
@@ -12,6 +13,8 @@ import type {
   User,
   Workspace,
   WorkspaceMember,
+  WorkspaceSubscription,
+  WorkspaceUsage,
 } from "@codetruth/core";
 
 export interface DataStore {
@@ -21,7 +24,13 @@ export interface DataStore {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByToken(token: string): Promise<User | undefined>;
+  getUserByGithubId(githubId: string): Promise<User | undefined>;
+  getUserByGoogleId(googleId: string): Promise<User | undefined>;
   saveUser(user: User): Promise<void>;
+  getSessionByToken(token: string): Promise<AuthSession | undefined>;
+  saveSession(session: AuthSession): Promise<void>;
+  deleteSession(token: string): Promise<void>;
+  deleteExpiredSessions(before?: string): Promise<void>;
   listWorkspaces(): Promise<Workspace[]>;
   getWorkspace(id: string): Promise<Workspace | undefined>;
   saveWorkspace(workspace: Workspace): Promise<void>;
@@ -59,4 +68,8 @@ export interface DataStore {
   listCustomCompliancePolicies(workspaceId: string): Promise<CustomCompliancePolicy[]>;
   saveCustomCompliancePolicy(policy: CustomCompliancePolicy): Promise<void>;
   deleteCustomCompliancePolicy(workspaceId: string, policyId: string): Promise<void>;
+  getWorkspaceSubscription(workspaceId: string): Promise<WorkspaceSubscription | undefined>;
+  saveWorkspaceSubscription(subscription: WorkspaceSubscription): Promise<void>;
+  getWorkspaceUsage(workspaceId: string, period: string): Promise<WorkspaceUsage | undefined>;
+  saveWorkspaceUsage(usage: WorkspaceUsage): Promise<void>;
 }

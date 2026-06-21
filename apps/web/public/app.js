@@ -530,6 +530,38 @@ async function loadReportView() {
   updateApprovalButtons();
 }
 
+async function initAuthProviders() {
+  const providers = await fetch("/auth/providers").then((r) => r.json());
+  document.getElementById("oauth-github").classList.toggle("hidden", !providers.github);
+  document.getElementById("oauth-google").classList.toggle("hidden", !providers.google);
+  document.getElementById("login-form").classList.toggle("hidden", !providers.devEmail);
+}
+
+async function loadBilling() {
+  const panel = document.getElementById("billing-panel");
+  const planEl = document.getElementById("billing-plan");
+  const usageEl = document.getElementById("billing-usage");
+  const upgradeBtn = document.getElementById("upgrade-pro-btn");
+  const portalBtn = document.getElementById("billing-portal-btn");
+
+  if (!state.workspaceId || !hasPermission("workspace:manage")) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  try {
+    const billing = await api(`/workspaces/${state.workspaceId}/billing`);
+    panel.classList.remove("hidden");
+    planEl.textContent = `Plan: ${billing.plan.name} (${billing.subscription.status}) · $${billing.plan.pricing.monthlyUsd ?? 0}/mo`;
+    usageEl.textContent = `Usage: ${billing.usage.analysesCount}/${billing.limits.analysesPerMonth} analyses · ${billing.usage.llmCouncilRuns}/${billing.limits.llmCouncilRunsPerMonth} LLM runs`;
+    const isPaid = billing.subscription.plan !== "free" && billing.subscription.status === "active";
+    upgradeBtn.classList.toggle("hidden", isPaid);
+    portalBtn.classList.toggle("hidden", !billing.subscription.stripeCustomerId);
+  } catch {
+    panel.classList.add("hidden");
+  }
+}
+
 async function bootstrapSession() {
   if (!state.token) {
     setVisibleAuthenticated(false);
@@ -563,6 +595,7 @@ async function loadWorkspaceContext() {
 
   localStorage.setItem("codetruth_workspace", state.workspaceId);
   workspaceRole.textContent = `Role: ${workspace.role} · Permissions: ${workspace.permissions.join(", ")}`;
+  await loadBilling();
 
   const payload = await api(`/workspaces/${state.workspaceId}/projects`);
   state.projects = payload.projects;
@@ -1161,8 +1194,36 @@ document.getElementById("export-tasks-linear").addEventListener("click", async (
   if (state.analysisId) await downloadExport(`/analyses/${state.analysisId}/export/tasks?format=linear`, "tasks-linear.json");
 });
 
-bootstrapSession().catch(() => {
-  localStorage.removeItem("codetruth_token");
-  state.token = "";
-  setVisibleAuthenticated(false);
+document.getElementById("upgrade-pro-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  const payload = await api(`/workspaces/${state.workspaceId}/billing/checkout`, {
+    method: "POST",
+    body: JSON.stringify({ plan: "pro", interval: "month" }),
+  });
+  if (payload.checkoutUrl) window.location.href = payload.checkoutUrl;
+});
+
+document.getElementById("billing-portal-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  const payload = await api(`/workspaces/${state.workspaceId}/billing/portal`, {
+    method: "POST",
+    body: "{}",
+  });
+  if (payload.portalUrl) window.location.href = payload.portalUrl;
+});
+
+const urlParams = new URLSearchParams(window.location.search);
+const oauthToken = urlParams.get("token");
+if (urlParams.get("auth") === "success" && oauthToken) {
+  state.token = oauthToken;
+  localStorage.setItem("codetruth_token", oauthToken);
+  window.history.replaceState({}, "", "/");
+}
+
+initAuthProviders().finally(() => {
+  bootstrapSession().catch(() => {
+    localStorage.removeItem("codetruth_token");
+    state.token = "";
+    setVisibleAuthenticated(false);
+  });
 });

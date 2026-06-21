@@ -18,8 +18,12 @@
 
     <section id="login-panel" class="panel">
       <h2>Sign in</h2>
-      <p class="muted">Use your email to access your workspace. No password required in local dev.</p>
-      <form id="login-form" class="stack">
+      <p class="muted">Sign in with GitHub or Google. Email login is available in local dev only.</p>
+      <div class="stack">
+        <a id="oauth-github" class="primary oauth-btn hidden" href="/auth/github">Continue with GitHub</a>
+        <a id="oauth-google" class="ghost oauth-btn hidden" href="/auth/google">Continue with Google</a>
+      </div>
+      <form id="login-form" class="stack hidden">
         <label>
           Email
           <input type="email" id="email" placeholder="you@company.com" required />
@@ -28,7 +32,7 @@
           Display name
           <input type="text" id="display-name" placeholder="Your name" />
         </label>
-        <button type="submit" class="primary">Continue</button>
+        <button type="submit" class="primary">Continue with email (dev)</button>
       </form>
     </section>
 
@@ -41,6 +45,14 @@
           </div>
           <select id="workspace-select"></select>
           <p id="workspace-role" class="muted"></p>
+          <div id="billing-panel" class="billing-panel hidden">
+            <p id="billing-plan" class="muted"></p>
+            <p id="billing-usage" class="muted"></p>
+            <div class="invite-row">
+              <button id="upgrade-pro-btn" class="ghost hidden">Upgrade to Pro</button>
+              <button id="billing-portal-btn" class="ghost hidden">Manage billing</button>
+            </div>
+          </div>
           <div class="invite-row">
             <input type="email" id="invite-email" placeholder="Invite by email" />
             <select id="invite-role">

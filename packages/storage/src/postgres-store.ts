@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import type {
   AnalysisJob,
   AuditLogEntry,
+  AuthSession,
   CognitionActivityEvent,
   ComplianceAttestation,
   ComplianceFramework,
@@ -17,9 +18,21 @@ import type {
   User,
   Workspace,
   WorkspaceMember,
+  WorkspaceSubscription,
+  WorkspaceUsage,
 } from "@codetruth/core";
 import type { DataStore } from "./interface.js";
-import { toAnalysis, toAudit, toMember, toProject, toUser, toWorkspace } from "./mappers.js";
+import {
+  toAnalysis,
+  toAudit,
+  toAuthSession,
+  toMember,
+  toProject,
+  toUser,
+  toWorkspace,
+  toWorkspaceSubscription,
+  toWorkspaceUsage,
+} from "./mappers.js";
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === undefined) return undefined;
@@ -74,13 +87,62 @@ export class PostgresStore implements DataStore {
         email: user.email,
         displayName: user.displayName,
         apiToken: user.apiToken,
+        authProvider: user.authProvider ?? null,
+        githubId: user.githubId ?? null,
+        googleId: user.googleId ?? null,
+        avatarUrl: user.avatarUrl ?? null,
         createdAt: new Date(user.createdAt),
       },
       update: {
         email: user.email,
         displayName: user.displayName,
         apiToken: user.apiToken,
+        authProvider: user.authProvider ?? null,
+        githubId: user.githubId ?? null,
+        googleId: user.googleId ?? null,
+        avatarUrl: user.avatarUrl ?? null,
       },
+    });
+  }
+
+  async getUserByGithubId(githubId: string): Promise<User | undefined> {
+    const row = await this.prisma.user.findUnique({ where: { githubId } });
+    return row ? toUser(row) : undefined;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const row = await this.prisma.user.findUnique({ where: { googleId } });
+    return row ? toUser(row) : undefined;
+  }
+
+  async getSessionByToken(token: string): Promise<AuthSession | undefined> {
+    const row = await this.prisma.authSession.findUnique({ where: { token } });
+    return row ? toAuthSession(row) : undefined;
+  }
+
+  async saveSession(session: AuthSession): Promise<void> {
+    await this.prisma.authSession.upsert({
+      where: { id: session.id },
+      create: {
+        id: session.id,
+        userId: session.userId,
+        token: session.token,
+        expiresAt: new Date(session.expiresAt),
+        createdAt: new Date(session.createdAt),
+      },
+      update: {
+        expiresAt: new Date(session.expiresAt),
+      },
+    });
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    await this.prisma.authSession.deleteMany({ where: { token } });
+  }
+
+  async deleteExpiredSessions(before = new Date().toISOString()): Promise<void> {
+    await this.prisma.authSession.deleteMany({
+      where: { expiresAt: { lt: new Date(before) } },
     });
   }
 
@@ -580,6 +642,70 @@ export class PostgresStore implements DataStore {
   async deleteCustomCompliancePolicy(workspaceId: string, policyId: string): Promise<void> {
     await this.prisma.customCompliancePolicy.deleteMany({
       where: { workspaceId, id: policyId },
+    });
+  }
+
+  async getWorkspaceSubscription(workspaceId: string): Promise<WorkspaceSubscription | undefined> {
+    const row = await this.prisma.workspaceSubscription.findUnique({
+      where: { workspaceId },
+    });
+    return row ? toWorkspaceSubscription(row) : undefined;
+  }
+
+  async saveWorkspaceSubscription(subscription: WorkspaceSubscription): Promise<void> {
+    await this.prisma.workspaceSubscription.upsert({
+      where: { workspaceId: subscription.workspaceId },
+      create: {
+        workspaceId: subscription.workspaceId,
+        plan: subscription.plan,
+        status: subscription.status,
+        stripeCustomerId: subscription.stripeCustomerId ?? null,
+        stripeSubscriptionId: subscription.stripeSubscriptionId ?? null,
+        currentPeriodEnd: subscription.currentPeriodEnd
+          ? new Date(subscription.currentPeriodEnd)
+          : null,
+        seatCount: subscription.seatCount ?? null,
+        updatedAt: new Date(subscription.updatedAt),
+      },
+      update: {
+        plan: subscription.plan,
+        status: subscription.status,
+        stripeCustomerId: subscription.stripeCustomerId ?? null,
+        stripeSubscriptionId: subscription.stripeSubscriptionId ?? null,
+        currentPeriodEnd: subscription.currentPeriodEnd
+          ? new Date(subscription.currentPeriodEnd)
+          : null,
+        seatCount: subscription.seatCount ?? null,
+        updatedAt: new Date(subscription.updatedAt),
+      },
+    });
+  }
+
+  async getWorkspaceUsage(
+    workspaceId: string,
+    period: string,
+  ): Promise<WorkspaceUsage | undefined> {
+    const row = await this.prisma.workspaceUsage.findUnique({
+      where: { workspaceId_period: { workspaceId, period } },
+    });
+    return row ? toWorkspaceUsage(row) : undefined;
+  }
+
+  async saveWorkspaceUsage(usage: WorkspaceUsage): Promise<void> {
+    await this.prisma.workspaceUsage.upsert({
+      where: { workspaceId_period: { workspaceId: usage.workspaceId, period: usage.period } },
+      create: {
+        workspaceId: usage.workspaceId,
+        period: usage.period,
+        analysesCount: usage.analysesCount,
+        llmCouncilRuns: usage.llmCouncilRuns,
+        projectsCreated: usage.projectsCreated,
+      },
+      update: {
+        analysesCount: usage.analysesCount,
+        llmCouncilRuns: usage.llmCouncilRuns,
+        projectsCreated: usage.projectsCreated,
+      },
     });
   }
 }
