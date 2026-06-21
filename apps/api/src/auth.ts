@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { createId } from "@codetruth/core";
 import type { User } from "@codetruth/core";
 import { parseSessionCookie, resolveUserFromSession } from "./oauth.js";
+import { isBetaModeEnabled, requireBetaAccess } from "./telemetry-service.js";
 import { store } from "./context.js";
 
 declare module "fastify" {
@@ -42,6 +43,16 @@ export async function authenticate(
   }
 
   request.user = user;
+
+  const path = request.url.split("?")[0] ?? "";
+  const betaExempt = path === "/beta/redeem" || path === "/beta/status";
+  if (isBetaModeEnabled() && !betaExempt && !(await requireBetaAccess(user.id))) {
+    return reply.code(403).send({
+      error: "Closed beta access required. Redeem an invite code at /beta/redeem.",
+      code: "beta_access_required",
+      betaMode: true,
+    });
+  }
 }
 
 export async function findOrCreateUser(

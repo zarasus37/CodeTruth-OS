@@ -3,6 +3,8 @@ import { initSpatialNavigator } from "./spatial-navigator.js";
 const state = {
   token: localStorage.getItem("codetruth_token") || "",
   user: null,
+  onboarding: null,
+  beta: { mode: false, hasAccess: true },
   workspaces: [],
   workspaceId: localStorage.getItem("codetruth_workspace") || "",
   projects: [],
@@ -13,6 +15,9 @@ const state = {
 };
 
 const loginPanel = document.getElementById("login-panel");
+const betaPanel = document.getElementById("beta-panel");
+const onboardingPanel = document.getElementById("onboarding-panel");
+const activationPanel = document.getElementById("activation-panel");
 const appPanel = document.getElementById("app-panel");
 const userChip = document.getElementById("user-chip");
 const workspaceSelect = document.getElementById("workspace-select");
@@ -94,9 +99,71 @@ function hasPermission(permission) {
   return ws?.permissions?.includes(permission) ?? false;
 }
 
+const ONBOARDING_FLOW = [
+  {
+    step: "welcome",
+    title: "Welcome to CodeTruth OS",
+    copy: "This cognitive layer turns a codebase into an evidence-backed truth report, spatial map, and remediation roadmap.",
+  },
+  {
+    step: "create_workspace",
+    title: "Create your workspace",
+    copy: "Workspaces isolate projects, billing, and institutional compliance posture.",
+  },
+  {
+    step: "create_project",
+    title: "Create a project",
+    copy: "Each project tracks snapshots, analyses, and cognition history over time.",
+  },
+  {
+    step: "first_upload",
+    title: "Upload your first codebase",
+    copy: "Zip your repository root. The Truth Council will analyze structure, risk, and production readiness.",
+  },
+  {
+    step: "view_report",
+    title: "Review the activation moment",
+    copy: "Your first report should surface unknown findings you can act on within minutes.",
+  },
+];
+
 function setVisibleAuthenticated(visible) {
   loginPanel.classList.toggle("hidden", visible);
+  betaPanel.classList.add("hidden");
+  onboardingPanel.classList.add("hidden");
+  activationPanel.classList.add("hidden");
   appPanel.classList.toggle("hidden", !visible);
+}
+
+function showBetaGate() {
+  loginPanel.classList.add("hidden");
+  betaPanel.classList.remove("hidden");
+  onboardingPanel.classList.add("hidden");
+  activationPanel.classList.add("hidden");
+  appPanel.classList.add("hidden");
+}
+
+function showOnboardingStep() {
+  const completed = new Set(state.onboarding?.completedSteps ?? []);
+  const next = ONBOARDING_FLOW.find((item) => !completed.has(item.step));
+  if (!next || completed.has("activation_survey")) {
+    onboardingPanel.classList.add("hidden");
+    return false;
+  }
+  document.getElementById("onboarding-title").textContent = next.title;
+  document.getElementById("onboarding-copy").textContent = next.copy;
+  onboardingPanel.dataset.step = next.step;
+  onboardingPanel.classList.remove("hidden");
+  appPanel.classList.add("hidden");
+  return true;
+}
+
+function maybeShowActivationSurvey() {
+  if (!state.onboarding?.firstAnalysisCompletedAt || state.onboarding?.activationSurvey) {
+    activationPanel.classList.add("hidden");
+    return;
+  }
+  activationPanel.classList.remove("hidden");
 }
 
 function fillSelect(select, items, selectedId, labelKey = "name") {
@@ -528,6 +595,25 @@ async function loadReportView() {
   reportPreview.textContent = markdown.slice(0, 4000);
   toggleExportButtons(true);
   updateApprovalButtons();
+
+  if (state.user?.id) {
+    await api("/onboarding/step", {
+      method: "POST",
+      body: JSON.stringify({ step: "view_report" }),
+    });
+    await recordFirstAnalysisIfNeeded(state.analysisId);
+    const me = await api("/users/me");
+    state.onboarding = me.onboarding;
+    maybeShowActivationSurvey();
+  }
+}
+
+async function recordFirstAnalysisIfNeeded(analysisId) {
+  if (!state.user?.id || !analysisId) return;
+  await api("/telemetry/first-analysis", {
+    method: "POST",
+    body: JSON.stringify({ analysisId }),
+  }).catch(() => {});
 }
 
 async function initAuthProviders() {
@@ -564,16 +650,40 @@ async function loadBilling() {
 
 async function bootstrapSession() {
   if (!state.token) {
-    setVisibleAuthenticated(false);
+    loginPanel.classList.remove("hidden");
+    betaPanel.classList.add("hidden");
+    onboardingPanel.classList.add("hidden");
+    activationPanel.classList.add("hidden");
+    appPanel.classList.add("hidden");
     return;
   }
 
-  const me = await api("/users/me");
+  let me;
+  try {
+    me = await api("/users/me");
+  } catch (error) {
+    if (error.message.includes("beta_access_required")) {
+      showBetaGate();
+      return;
+    }
+    throw error;
+  }
+
   state.user = me.user;
+  state.onboarding = me.onboarding;
+  state.beta = me.beta ?? state.beta;
   state.workspaces = me.workspaces;
   userChip.textContent = `${me.user.displayName} · ${me.user.email}`;
   userChip.classList.remove("hidden");
+
+  if (state.beta.mode && !state.beta.hasAccess) {
+    showBetaGate();
+    return;
+  }
+
   setVisibleAuthenticated(true);
+  if (showOnboardingStep()) return;
+  maybeShowActivationSurvey();
 
   if (!state.workspaces.length) {
     workspaceSelect.innerHTML = "<option>No workspaces yet</option>";
@@ -856,6 +966,45 @@ async function downloadExport(path, filename) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+document.getElementById("beta-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const code = document.getElementById("beta-code").value.trim();
+  await api("/beta/redeem", {
+    method: "POST",
+    body: JSON.stringify({ code, workspaceId: state.workspaceId || undefined }),
+  });
+  await bootstrapSession();
+});
+
+document.getElementById("onboarding-next").addEventListener("click", async () => {
+  const step = onboardingPanel.dataset.step;
+  if (!step) return;
+  const payload = await api("/onboarding/step", {
+    method: "POST",
+    body: JSON.stringify({ step }),
+  });
+  state.onboarding = payload.onboarding;
+  if (!showOnboardingStep()) {
+    onboardingPanel.classList.add("hidden");
+    appPanel.classList.remove("hidden");
+  }
+});
+
+document.getElementById("activation-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = await api("/onboarding/activation-survey", {
+    method: "POST",
+    body: JSON.stringify({
+      unknownFindingsCount: Number(document.getElementById("activation-count").value),
+      feltActivationMoment: document.getElementById("activation-felt").checked,
+      notes: document.getElementById("activation-notes").value.trim() || undefined,
+    }),
+  });
+  state.onboarding = payload.onboarding;
+  activationPanel.classList.add("hidden");
+  appPanel.classList.remove("hidden");
+});
 
 document.getElementById("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();

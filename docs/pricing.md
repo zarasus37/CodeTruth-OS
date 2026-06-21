@@ -12,7 +12,7 @@ CodeTruth OS sits between lightweight static scanners and expensive manual techn
 | Manual tech DD | $5,000–$50,000 per engagement |
 | Sourcegraph Enterprise | from ~$16,000/year |
 
-**Optimal price point:** Pro at **$79/month** balances Truth Council LLM compute cost with buyer willingness in the builder/team segment. Team at **$449/month** targets agencies and small platform teams. Annual plans use a **17% discount** (two months free).
+**Modeled price point (pre-validation):** Pro at **$79/month** sits in the upper-middle of the blueprint's $49–99 range. It was chosen to cover LLM council COGS and signal institutional quality — not because we have validated willingness-to-pay data yet. **Phase B closed beta** is when we test whether $79, $59, or $49 converts better. Team at **$449/month** targets agencies and small platform teams. Annual plans use a **17% discount** (two months free).
 
 ## Plans
 

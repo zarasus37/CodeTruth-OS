@@ -32,6 +32,13 @@ import { registerBillingRoutes } from "./billing-routes.js";
 import { authenticate, findOrCreateUser, refreshUserToken } from "./auth.js";
 import { isDevEmailLoginEnabled } from "./oauth.js";
 import { registerOAuthRoutes } from "./oauth-routes.js";
+import { registerPhaseBRoutes } from "./phase-b-routes.js";
+import {
+  completeOnboardingStep,
+  getOrCreateOnboarding,
+  recordFirstAnalysisCompleted,
+  trackEvent,
+} from "./telemetry-service.js";
 import { registerCollaborationRoutes } from "./collaboration-routes.js";
 import { dataRoot, snapshotRoot, storageBackend, store, uploadRoot, webRoot } from "./context.js";
 import { registerGitHubRoutes } from "./github-routes.js";
@@ -127,6 +134,9 @@ async function bootstrap() {
       "stripe-billing",
       "feature-gates",
       "usage-metering",
+      "product-telemetry",
+      "closed-beta",
+      "onboarding-flow",
       isGitHubAppEnabled() ? "github-app" : "github-pat",
       isLlmEnabled() ? "llm-truth-council" : "heuristic-truth-council",
     ],
@@ -187,9 +197,17 @@ async function bootstrap() {
       }),
     );
 
+    const onboarding = await getOrCreateOnboarding(request.user!.id);
+    const betaAccess = await store.hasUserBetaAccess(request.user!.id);
+
     return {
       user: request.user,
       workspaces: workspaces.filter(Boolean),
+      onboarding,
+      beta: {
+        mode: process.env.BETA_MODE === "true",
+        hasAccess: betaAccess,
+      },
     };
   });
 
@@ -223,6 +241,11 @@ async function bootstrap() {
       await store.saveWorkspace(workspace);
       await store.saveMember(membership);
       await getOrCreateSubscription(workspace.id);
+      await completeOnboardingStep(request.user!.id, "create_workspace");
+      await trackEvent("workspace.created", {
+        userId: request.user!.id,
+        workspaceId: workspace.id,
+      });
       await recordAudit({
         workspaceId: workspace.id,
         userId: request.user!.id,
@@ -375,6 +398,12 @@ async function bootstrap() {
       };
       await store.saveProject(project);
       await recordProjectCreatedUsage(request.params.workspaceId);
+      await completeOnboardingStep(request.user!.id, "create_project");
+      await trackEvent("project.created", {
+        userId: request.user!.id,
+        workspaceId: request.params.workspaceId,
+        projectId: project.id,
+      });
       await recordAudit({
         workspaceId: request.params.workspaceId,
         userId: request.user!.id,
@@ -434,6 +463,13 @@ async function bootstrap() {
           incrementalBaseSnapshotId: parentSnapshotId,
         });
         await recordAnalysisUsage(request.params.workspaceId);
+        await trackEvent("analysis.started", {
+          userId: request.user!.id,
+          workspaceId: request.params.workspaceId,
+          projectId: project.id,
+          analysisId: analysis.id,
+          properties: { triggeredBy: "upload" },
+        });
         await store.appendCognitionActivity(
           createActivityEvent({
             workspaceId: request.params.workspaceId,
@@ -545,6 +581,7 @@ async function bootstrap() {
 
   await registerOAuthRoutes(app);
   await registerBillingRoutes(app);
+  await registerPhaseBRoutes(app);
   await registerCollaborationRoutes(app);
   await registerStreamRoutes(app);
   await registerSnapshotRoutes(app);

@@ -16,13 +16,73 @@ model User {
   githubId          String?           @unique @map("github_id")
   googleId          String?           @unique @map("google_id")
   avatarUrl         String?           @map("avatar_url")
+  betaAccessAt      DateTime?         @map("beta_access_at")
+  betaInviteCode    String?           @map("beta_invite_code")
   createdAt         DateTime          @default(now()) @map("created_at")
   memberships       WorkspaceMember[]
   auditEntries      AuditLogEntry[]
   createdWorkspaces Workspace[]       @relation("WorkspaceCreator")
   sessions          AuthSession[]
+  onboarding        UserOnboarding?
+  betaRedemptions   BetaRedemption[]
 
   @@map("users")
+}
+
+model UserOnboarding {
+  userId                   String    @id @map("user_id")
+  completedSteps           Json      @default("[]") @map("completed_steps")
+  firstAnalysisCompletedAt DateTime? @map("first_analysis_completed_at")
+  activationSurvey         Json?     @map("activation_survey")
+  activationSurveyAt       DateTime? @map("activation_survey_at")
+  completedAt              DateTime? @map("completed_at")
+  updatedAt                DateTime  @map("updated_at")
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_onboarding")
+}
+
+model ProductEvent {
+  id          String   @id
+  event       String
+  userId      String?  @map("user_id")
+  workspaceId String?  @map("workspace_id")
+  projectId   String?  @map("project_id")
+  analysisId  String?  @map("analysis_id")
+  properties  Json?
+  timestamp   DateTime @default(now())
+
+  @@index([event, timestamp(sort: Desc)])
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("product_events")
+}
+
+model BetaInvite {
+  id               String           @id
+  code             String           @unique
+  label            String?
+  maxRedemptions   Int              @map("max_redemptions")
+  redemptionCount  Int              @default(0) @map("redemption_count")
+  grantsPlan       String           @map("grants_plan")
+  trialDays        Int              @default(30) @map("trial_days")
+  expiresAt        DateTime?        @map("expires_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  redemptions      BetaRedemption[]
+
+  @@map("beta_invites")
+}
+
+model BetaRedemption {
+  id         String    @id
+  inviteId   String    @map("invite_id")
+  userId     String    @map("user_id")
+  workspaceId String?  @map("workspace_id")
+  redeemedAt DateTime  @map("redeemed_at")
+  invite     BetaInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("beta_redemptions")
 }
 
 model AuthSession {

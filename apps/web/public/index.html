@@ -16,6 +16,44 @@
       <div id="user-chip" class="user-chip hidden"></div>
     </header>
 
+    <section id="beta-panel" class="panel hidden">
+      <h2>Closed beta</h2>
+      <p class="muted">CodeTruth OS is in closed beta. Enter your invite code to continue.</p>
+      <form id="beta-form" class="stack">
+        <label>
+          Invite code
+          <input type="text" id="beta-code" placeholder="MONAD-2026" required />
+        </label>
+        <button type="submit" class="primary">Unlock beta access</button>
+      </form>
+    </section>
+
+    <section id="onboarding-panel" class="panel hidden">
+      <h2 id="onboarding-title">Welcome to CodeTruth OS</h2>
+      <p id="onboarding-copy" class="muted"></p>
+      <button id="onboarding-next" class="primary">Continue</button>
+    </section>
+
+    <section id="activation-panel" class="panel hidden">
+      <h2>Activation moment</h2>
+      <p class="muted">Did your first analysis surface unknown issues you would act on?</p>
+      <form id="activation-form" class="stack">
+        <label>
+          How many unknown actionable findings did you discover?
+          <input type="number" id="activation-count" min="0" max="50" value="3" required />
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="activation-felt" checked />
+          This felt like a real activation moment (≥3 unknown findings)
+        </label>
+        <label>
+          Notes (optional)
+          <textarea id="activation-notes" rows="3" placeholder="What surprised you?"></textarea>
+        </label>
+        <button type="submit" class="primary">Submit feedback</button>
+      </form>
+    </section>
+
     <section id="login-panel" class="panel">
       <h2>Sign in</h2>
       <p class="muted">Sign in with GitHub or Google. Email login is available in local dev only.</p>

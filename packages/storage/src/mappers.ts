@@ -1,14 +1,20 @@
 import type { Prisma } from "@prisma/client";
 import type {
+  ActivationSurveyResponse,
   AnalysisJob,
   AuditLogEntry,
   AuthSession,
+  BetaInvite,
+  BetaRedemption,
   GitHubProjectConfig,
+  OnboardingStep,
   PipelineArtifacts,
+  ProductEvent,
   Project,
   SubscriptionPlan,
   SubscriptionStatus,
   User,
+  UserOnboarding,
   Workspace,
   WorkspaceMember,
   WorkspaceSubscription,
@@ -24,6 +30,8 @@ export function toUser(row: {
   githubId?: string | null;
   googleId?: string | null;
   avatarUrl?: string | null;
+  betaAccessAt?: Date | null;
+  betaInviteCode?: string | null;
   createdAt: Date;
 }): User {
   return {
@@ -35,7 +43,93 @@ export function toUser(row: {
     githubId: row.githubId ?? undefined,
     googleId: row.googleId ?? undefined,
     avatarUrl: row.avatarUrl ?? undefined,
+    betaAccessAt: row.betaAccessAt?.toISOString(),
+    betaInviteCode: row.betaInviteCode ?? undefined,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toUserOnboarding(row: {
+  userId: string;
+  completedSteps: unknown;
+  firstAnalysisCompletedAt: Date | null;
+  activationSurvey: unknown | null;
+  activationSurveyAt: Date | null;
+  completedAt: Date | null;
+  updatedAt: Date;
+}): UserOnboarding {
+  return {
+    userId: row.userId,
+    completedSteps: (row.completedSteps as OnboardingStep[]) ?? [],
+    firstAnalysisCompletedAt: row.firstAnalysisCompletedAt?.toISOString(),
+    activationSurvey: row.activationSurvey
+      ? (row.activationSurvey as ActivationSurveyResponse)
+      : undefined,
+    activationSurveyAt: row.activationSurveyAt?.toISOString(),
+    completedAt: row.completedAt?.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toProductEvent(row: {
+  id: string;
+  event: string;
+  userId: string | null;
+  workspaceId: string | null;
+  projectId: string | null;
+  analysisId: string | null;
+  properties: unknown | null;
+  timestamp: Date;
+}): ProductEvent {
+  return {
+    id: row.id,
+    event: row.event,
+    userId: row.userId ?? undefined,
+    workspaceId: row.workspaceId ?? undefined,
+    projectId: row.projectId ?? undefined,
+    analysisId: row.analysisId ?? undefined,
+    properties: row.properties ? (row.properties as Record<string, unknown>) : undefined,
+    timestamp: row.timestamp.toISOString(),
+  };
+}
+
+export function toBetaInvite(row: {
+  id: string;
+  code: string;
+  label: string | null;
+  maxRedemptions: number;
+  redemptionCount: number;
+  grantsPlan: string;
+  trialDays: number;
+  expiresAt: Date | null;
+  createdAt: Date;
+}): BetaInvite {
+  return {
+    id: row.id,
+    code: row.code,
+    label: row.label ?? undefined,
+    maxRedemptions: row.maxRedemptions,
+    redemptionCount: row.redemptionCount,
+    grantsPlan: row.grantsPlan as SubscriptionPlan,
+    trialDays: row.trialDays,
+    expiresAt: row.expiresAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toBetaRedemption(row: {
+  id: string;
+  inviteId: string;
+  userId: string;
+  workspaceId: string | null;
+  redeemedAt: Date;
+}): BetaRedemption {
+  return {
+    id: row.id,
+    inviteId: row.inviteId,
+    userId: row.userId,
+    workspaceId: row.workspaceId ?? undefined,
+    redeemedAt: row.redeemedAt.toISOString(),
   };
 }
 

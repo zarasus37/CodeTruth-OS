@@ -1,16 +1,22 @@
 import type {
+  ActivationSurveyResponse,
   AnalysisJob,
   AuditLogEntry,
   AuthSession,
+  BetaInvite,
+  BetaRedemption,
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
   FindingAnnotation,
   FindingReview,
+  OnboardingStep,
+  ProductEvent,
   Project,
   ReAnalysisSchedule,
   ReportApproval,
   User,
+  UserOnboarding,
   Workspace,
   WorkspaceMember,
   WorkspaceSubscription,
@@ -72,4 +78,16 @@ export interface DataStore {
   saveWorkspaceSubscription(subscription: WorkspaceSubscription): Promise<void>;
   getWorkspaceUsage(workspaceId: string, period: string): Promise<WorkspaceUsage | undefined>;
   saveWorkspaceUsage(usage: WorkspaceUsage): Promise<void>;
+  appendProductEvent(event: ProductEvent): Promise<void>;
+  listProductEvents(limit?: number, event?: string): Promise<ProductEvent[]>;
+  getUserOnboarding(userId: string): Promise<UserOnboarding | undefined>;
+  saveUserOnboarding(onboarding: UserOnboarding): Promise<void>;
+  getBetaInviteByCode(code: string): Promise<BetaInvite | undefined>;
+  listBetaInvites(): Promise<BetaInvite[]>;
+  saveBetaInvite(invite: BetaInvite): Promise<void>;
+  saveBetaRedemption(redemption: BetaRedemption): Promise<void>;
+  listBetaRedemptions(userId?: string): Promise<BetaRedemption[]>;
+  countBetaRedemptions(): Promise<number>;
+  setUserBetaAccess(userId: string, inviteCode: string, accessAt: string): Promise<void>;
+  hasUserBetaAccess(userId: string): Promise<boolean>;
 }

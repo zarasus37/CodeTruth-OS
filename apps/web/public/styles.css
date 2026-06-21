@@ -14,6 +14,18 @@
 
 * { box-sizing: border-box; }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oauth-btn {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

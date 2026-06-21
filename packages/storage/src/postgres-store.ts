@@ -3,6 +3,8 @@ import type {
   AnalysisJob,
   AuditLogEntry,
   AuthSession,
+  BetaInvite,
+  BetaRedemption,
   CognitionActivityEvent,
   ComplianceAttestation,
   ComplianceFramework,
@@ -12,10 +14,12 @@ import type {
   SeverityLevel,
   FindingAnnotation,
   FindingReview,
+  ProductEvent,
   Project,
   ReAnalysisSchedule,
   ReportApproval,
   User,
+  UserOnboarding,
   Workspace,
   WorkspaceMember,
   WorkspaceSubscription,
@@ -26,9 +30,13 @@ import {
   toAnalysis,
   toAudit,
   toAuthSession,
+  toBetaInvite,
+  toBetaRedemption,
   toMember,
+  toProductEvent,
   toProject,
   toUser,
+  toUserOnboarding,
   toWorkspace,
   toWorkspaceSubscription,
   toWorkspaceUsage,
@@ -91,6 +99,8 @@ export class PostgresStore implements DataStore {
         githubId: user.githubId ?? null,
         googleId: user.googleId ?? null,
         avatarUrl: user.avatarUrl ?? null,
+        betaAccessAt: user.betaAccessAt ? new Date(user.betaAccessAt) : null,
+        betaInviteCode: user.betaInviteCode ?? null,
         createdAt: new Date(user.createdAt),
       },
       update: {
@@ -101,6 +111,8 @@ export class PostgresStore implements DataStore {
         githubId: user.githubId ?? null,
         googleId: user.googleId ?? null,
         avatarUrl: user.avatarUrl ?? null,
+        betaAccessAt: user.betaAccessAt ? new Date(user.betaAccessAt) : null,
+        betaInviteCode: user.betaInviteCode ?? null,
       },
     });
   }
@@ -707,5 +719,144 @@ export class PostgresStore implements DataStore {
         projectsCreated: usage.projectsCreated,
       },
     });
+  }
+
+  async appendProductEvent(event: ProductEvent): Promise<void> {
+    await this.prisma.productEvent.create({
+      data: {
+        id: event.id,
+        event: event.event,
+        userId: event.userId ?? null,
+        workspaceId: event.workspaceId ?? null,
+        projectId: event.projectId ?? null,
+        analysisId: event.analysisId ?? null,
+        properties: toJsonValue(event.properties),
+        timestamp: new Date(event.timestamp),
+      },
+    });
+  }
+
+  async listProductEvents(limit = 500, event?: string): Promise<ProductEvent[]> {
+    const rows = await this.prisma.productEvent.findMany({
+      where: event ? { event } : undefined,
+      orderBy: { timestamp: "desc" },
+      take: limit,
+    });
+    return rows.map(toProductEvent);
+  }
+
+  async getUserOnboarding(userId: string): Promise<UserOnboarding | undefined> {
+    const row = await this.prisma.userOnboarding.findUnique({ where: { userId } });
+    return row ? toUserOnboarding(row) : undefined;
+  }
+
+  async saveUserOnboarding(onboarding: UserOnboarding): Promise<void> {
+    await this.prisma.userOnboarding.upsert({
+      where: { userId: onboarding.userId },
+      create: {
+        userId: onboarding.userId,
+        completedSteps: toJsonValue(onboarding.completedSteps) ?? [],
+        firstAnalysisCompletedAt: onboarding.firstAnalysisCompletedAt
+          ? new Date(onboarding.firstAnalysisCompletedAt)
+          : null,
+        activationSurvey: toJsonValue(onboarding.activationSurvey),
+        activationSurveyAt: onboarding.activationSurveyAt
+          ? new Date(onboarding.activationSurveyAt)
+          : null,
+        completedAt: onboarding.completedAt ? new Date(onboarding.completedAt) : null,
+        updatedAt: new Date(onboarding.updatedAt),
+      },
+      update: {
+        completedSteps: toJsonValue(onboarding.completedSteps) ?? [],
+        firstAnalysisCompletedAt: onboarding.firstAnalysisCompletedAt
+          ? new Date(onboarding.firstAnalysisCompletedAt)
+          : null,
+        activationSurvey: toJsonValue(onboarding.activationSurvey),
+        activationSurveyAt: onboarding.activationSurveyAt
+          ? new Date(onboarding.activationSurveyAt)
+          : null,
+        completedAt: onboarding.completedAt ? new Date(onboarding.completedAt) : null,
+        updatedAt: new Date(onboarding.updatedAt),
+      },
+    });
+  }
+
+  async getBetaInviteByCode(code: string): Promise<BetaInvite | undefined> {
+    const row = await this.prisma.betaInvite.findUnique({
+      where: { code: code.trim().toUpperCase() },
+    });
+    return row ? toBetaInvite(row) : undefined;
+  }
+
+  async listBetaInvites(): Promise<BetaInvite[]> {
+    const rows = await this.prisma.betaInvite.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.map(toBetaInvite);
+  }
+
+  async saveBetaInvite(invite: BetaInvite): Promise<void> {
+    await this.prisma.betaInvite.upsert({
+      where: { id: invite.id },
+      create: {
+        id: invite.id,
+        code: invite.code.toUpperCase(),
+        label: invite.label ?? null,
+        maxRedemptions: invite.maxRedemptions,
+        redemptionCount: invite.redemptionCount,
+        grantsPlan: invite.grantsPlan,
+        trialDays: invite.trialDays,
+        expiresAt: invite.expiresAt ? new Date(invite.expiresAt) : null,
+        createdAt: new Date(invite.createdAt),
+      },
+      update: {
+        label: invite.label ?? null,
+        maxRedemptions: invite.maxRedemptions,
+        redemptionCount: invite.redemptionCount,
+        grantsPlan: invite.grantsPlan,
+        trialDays: invite.trialDays,
+        expiresAt: invite.expiresAt ? new Date(invite.expiresAt) : null,
+      },
+    });
+  }
+
+  async saveBetaRedemption(redemption: BetaRedemption): Promise<void> {
+    await this.prisma.betaRedemption.create({
+      data: {
+        id: redemption.id,
+        inviteId: redemption.inviteId,
+        userId: redemption.userId,
+        workspaceId: redemption.workspaceId ?? null,
+        redeemedAt: new Date(redemption.redeemedAt),
+      },
+    });
+  }
+
+  async listBetaRedemptions(userId?: string): Promise<BetaRedemption[]> {
+    const rows = await this.prisma.betaRedemption.findMany({
+      where: userId ? { userId } : undefined,
+      orderBy: { redeemedAt: "desc" },
+    });
+    return rows.map(toBetaRedemption);
+  }
+
+  async countBetaRedemptions(): Promise<number> {
+    return this.prisma.betaRedemption.count();
+  }
+
+  async setUserBetaAccess(userId: string, inviteCode: string, accessAt: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        betaAccessAt: new Date(accessAt),
+        betaInviteCode: inviteCode.toUpperCase(),
+      },
+    });
+  }
+
+  async hasUserBetaAccess(userId: string): Promise<boolean> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { betaAccessAt: true },
+    });
+    return Boolean(row?.betaAccessAt);
   }
 }

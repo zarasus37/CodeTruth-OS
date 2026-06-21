@@ -4,15 +4,19 @@ import type {
   AnalysisJob,
   AuditLogEntry,
   AuthSession,
+  BetaInvite,
+  BetaRedemption,
   CognitionActivityEvent,
   ComplianceAttestation,
   CustomCompliancePolicy,
   FindingAnnotation,
   FindingReview,
+  ProductEvent,
   Project,
   ReAnalysisSchedule,
   ReportApproval,
   User,
+  UserOnboarding,
   Workspace,
   WorkspaceMember,
   WorkspaceSubscription,
@@ -373,5 +377,81 @@ export class JsonStore implements DataStore {
     if (index >= 0) records[index] = usage;
     else records.push(usage);
     await this.writeCollection("workspace_usage.json", records);
+  }
+
+  async appendProductEvent(event: ProductEvent): Promise<void> {
+    const events = await this.readCollection<ProductEvent>("product_events.json");
+    events.push(event);
+    await this.writeCollection("product_events.json", events.slice(-10_000));
+  }
+
+  async listProductEvents(limit = 500, event?: string): Promise<ProductEvent[]> {
+    let events = await this.readCollection<ProductEvent>("product_events.json");
+    if (event) events = events.filter((item) => item.event === event);
+    return events
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, limit);
+  }
+
+  async getUserOnboarding(userId: string): Promise<UserOnboarding | undefined> {
+    return (await this.readCollection<UserOnboarding>("user_onboarding.json")).find(
+      (item) => item.userId === userId,
+    );
+  }
+
+  async saveUserOnboarding(onboarding: UserOnboarding): Promise<void> {
+    const records = await this.readCollection<UserOnboarding>("user_onboarding.json");
+    const index = records.findIndex((item) => item.userId === onboarding.userId);
+    if (index >= 0) records[index] = onboarding;
+    else records.push(onboarding);
+    await this.writeCollection("user_onboarding.json", records);
+  }
+
+  async getBetaInviteByCode(code: string): Promise<BetaInvite | undefined> {
+    const normalized = code.trim().toUpperCase();
+    return (await this.readCollection<BetaInvite>("beta_invites.json")).find(
+      (invite) => invite.code.toUpperCase() === normalized,
+    );
+  }
+
+  async listBetaInvites(): Promise<BetaInvite[]> {
+    return this.readCollection<BetaInvite>("beta_invites.json");
+  }
+
+  async saveBetaInvite(invite: BetaInvite): Promise<void> {
+    const invites = await this.readCollection<BetaInvite>("beta_invites.json");
+    const index = invites.findIndex((item) => item.id === invite.id);
+    if (index >= 0) invites[index] = invite;
+    else invites.push(invite);
+    await this.writeCollection("beta_invites.json", invites);
+  }
+
+  async saveBetaRedemption(redemption: BetaRedemption): Promise<void> {
+    const redemptions = await this.readCollection<BetaRedemption>("beta_redemptions.json");
+    redemptions.push(redemption);
+    await this.writeCollection("beta_redemptions.json", redemptions);
+  }
+
+  async listBetaRedemptions(userId?: string): Promise<BetaRedemption[]> {
+    const redemptions = await this.readCollection<BetaRedemption>("beta_redemptions.json");
+    if (!userId) return redemptions;
+    return redemptions.filter((item) => item.userId === userId);
+  }
+
+  async countBetaRedemptions(): Promise<number> {
+    return (await this.readCollection<BetaRedemption>("beta_redemptions.json")).length;
+  }
+
+  async setUserBetaAccess(userId: string, inviteCode: string, accessAt: string): Promise<void> {
+    const user = await this.getUser(userId);
+    if (!user) return;
+    user.betaAccessAt = accessAt;
+    user.betaInviteCode = inviteCode;
+    await this.saveUser(user);
+  }
+
+  async hasUserBetaAccess(userId: string): Promise<boolean> {
+    const user = await this.getUser(userId);
+    return Boolean(user?.betaAccessAt);
   }
 }

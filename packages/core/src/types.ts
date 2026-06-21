@@ -582,6 +582,8 @@ export interface User {
   githubId?: string;
   googleId?: string;
   avatarUrl?: string;
+  betaAccessAt?: string;
+  betaInviteCode?: string;
 }
 
 export interface AuthSession {
@@ -610,6 +612,77 @@ export interface WorkspaceUsage {
   analysesCount: number;
   llmCouncilRuns: number;
   projectsCreated: number;
+}
+
+export type ProductEventName =
+  | "user.signed_up"
+  | "user.signed_in"
+  | "workspace.created"
+  | "project.created"
+  | "analysis.started"
+  | "analysis.completed"
+  | "analysis.failed"
+  | "onboarding.step_completed"
+  | "onboarding.completed"
+  | "activation.survey_submitted"
+  | "beta.invite_redeemed"
+  | "billing.checkout_started"
+  | "billing.upgrade_blocked"
+  | "feature.used";
+
+export interface ProductEvent {
+  id: string;
+  event: ProductEventName | string;
+  userId?: string;
+  workspaceId?: string;
+  projectId?: string;
+  analysisId?: string;
+  properties?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export type OnboardingStep =
+  | "welcome"
+  | "create_workspace"
+  | "create_project"
+  | "first_upload"
+  | "view_report"
+  | "activation_survey";
+
+export interface ActivationSurveyResponse {
+  unknownFindingsCount: number;
+  feltActivationMoment: boolean;
+  notes?: string;
+}
+
+export interface UserOnboarding {
+  userId: string;
+  completedSteps: OnboardingStep[];
+  firstAnalysisCompletedAt?: string;
+  activationSurvey?: ActivationSurveyResponse;
+  activationSurveyAt?: string;
+  completedAt?: string;
+  updatedAt: string;
+}
+
+export interface BetaInvite {
+  id: string;
+  code: string;
+  label?: string;
+  maxRedemptions: number;
+  redemptionCount: number;
+  grantsPlan: SubscriptionPlan;
+  trialDays: number;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface BetaRedemption {
+  id: string;
+  inviteId: string;
+  userId: string;
+  workspaceId?: string;
+  redeemedAt: string;
 }
 
 export interface Workspace {

@@ -232,8 +232,15 @@ export async function handleGitHubCallback(code: string): Promise<User> {
       };
     }
     await store.saveUser(user);
+    const { trackEvent } = await import("./telemetry-service.js");
+    await trackEvent("user.signed_up", {
+      userId: user.id,
+      properties: { authProvider: "github" },
+    });
   }
 
+  const { trackEvent } = await import("./telemetry-service.js");
+  await trackEvent("user.signed_in", { userId: user.id, properties: { authProvider: "github" } });
   return user;
 }
 
@@ -286,7 +293,14 @@ export async function handleGoogleCallback(code: string): Promise<User> {
       };
     }
     await store.saveUser(user);
+    const { trackEvent } = await import("./telemetry-service.js");
+    await trackEvent("user.signed_up", {
+      userId: user.id,
+      properties: { authProvider: "google" },
+    });
   }
 
+  const { trackEvent } = await import("./telemetry-service.js");
+  await trackEvent("user.signed_in", { userId: user.id, properties: { authProvider: "google" } });
   return user;
 }
