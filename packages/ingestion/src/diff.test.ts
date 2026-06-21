@@ -49,8 +49,28 @@ describe("diffSnapshots", () => {
     const base = snap("snap_a", [{ path: "a.go", hash: "1" }]);
     const target = snap("snap_b", [{ path: "a.go", hash: "1" }]);
     const diff = diffSnapshots(base, target, {
-      baseSymbols: [{ id: "s1", name: "Old", kind: "function", filePath: "a.go" }],
-      targetSymbols: [{ id: "s2", name: "New", kind: "function", filePath: "a.go" }],
+      baseSymbols: [
+        {
+          id: "s1",
+          name: "Old",
+          kind: "function",
+          filePath: "a.go",
+          confidence: "Confirmed",
+          evidence: [{ snapshotHash: "h", filePath: "a.go", extractionMethod: "AST" }],
+          evidenceChain: [{ snapshotHash: "h", filePath: "a.go", extractionMethod: "AST" }],
+        },
+      ],
+      targetSymbols: [
+        {
+          id: "s2",
+          name: "New",
+          kind: "function",
+          filePath: "a.go",
+          confidence: "Confirmed",
+          evidence: [{ snapshotHash: "h", filePath: "a.go", extractionMethod: "AST" }],
+          evidenceChain: [{ snapshotHash: "h", filePath: "a.go", extractionMethod: "AST" }],
+        },
+      ],
     });
     expect(diff.symbolChanges?.length).toBe(2);
   });

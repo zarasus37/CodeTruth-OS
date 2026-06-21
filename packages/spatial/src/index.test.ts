@@ -18,8 +18,28 @@ describe("buildSpatialGraph", () => {
 
     const graph = buildSpatialGraph({
       architecture,
-      symbols: [{ id: "sym1", name: "main", kind: "function", filePath: "src/index.ts", line: 1 }],
-      dependencies: [{ from: "src/index.ts", to: "./lib", kind: "imports" }],
+      symbols: [
+        {
+          id: "sym1",
+          name: "main",
+          kind: "function",
+          filePath: "src/index.ts",
+          line: 1,
+          confidence: "Confirmed",
+          evidence: [{ snapshotHash: "h", filePath: "src/index.ts", lineStart: 1, extractionMethod: "AST" }],
+          evidenceChain: [{ snapshotHash: "h", filePath: "src/index.ts", lineStart: 1, extractionMethod: "AST" }],
+        },
+      ],
+      dependencies: [
+        {
+          from: "src/index.ts",
+          to: "./lib",
+          kind: "imports",
+          confidence: "Confirmed",
+          evidence: [{ snapshotHash: "h", filePath: "src/index.ts", extractionMethod: "AST" }],
+          evidenceChain: [{ snapshotHash: "h", filePath: "src/index.ts", extractionMethod: "AST" }],
+        },
+      ],
       findings,
       scorecard,
     });

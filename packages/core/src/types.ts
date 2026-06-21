@@ -389,12 +389,26 @@ export interface SymbolRecord {
   kind: "function" | "class" | "interface" | "type" | "variable" | "export" | "import";
   filePath: string;
   line?: number;
+  lineEnd?: number;
+  columnStart?: number;
+  columnEnd?: number;
+  confidence: ConfidenceLevel;
+  evidence: EvidenceRecord[];
+  /** Parser-origin evidence chain (≥1 link with path + extraction method). */
+  evidenceChain: EvidenceRecord[];
+  parserEngine?: string;
 }
 
 export interface DependencyEdge {
   from: string;
   to: string;
   kind: "imports" | "depends_on" | "calls";
+  /** Snapshot-relative path when cross-file import resolves. */
+  resolvedTo?: string;
+  line?: number;
+  confidence: ConfidenceLevel;
+  evidence: EvidenceRecord[];
+  evidenceChain: EvidenceRecord[];
 }
 
 export interface ServiceNode {

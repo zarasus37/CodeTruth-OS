@@ -39,6 +39,11 @@ export function confidenceMeetsMinimum(
   return confidenceRank(actual) >= confidenceRank(minimum);
 }
 
+/** Merge two confidence levels, keeping the more conservative (lower) tier. */
+export function mergeConfidence(a: ConfidenceLevel, b: ConfidenceLevel): ConfidenceLevel {
+  return confidenceRank(a) <= confidenceRank(b) ? a : b;
+}
+
 /** Derive confidence from evidence chain strength (AST/config > pattern > inference-only). */
 export function inferConfidenceFromEvidence(evidence: EvidenceRecord[]): ConfidenceLevel {
   if (!evidence.length) return "Unknown";

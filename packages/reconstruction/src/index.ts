@@ -77,18 +77,22 @@ export function reconstructArchitecture(
 
   const edges = dependencies.slice(0, 250).map((dep) => ({
     from: dep.from,
-    to: dep.to,
+    to: dep.resolvedTo ?? dep.to,
     kind: dep.kind,
-    confidence: (dep.to.startsWith(".") ? "Confirmed" : "Weakly Inferred") as ConfidenceLevel,
+    confidence: dep.confidence as ConfidenceLevel,
   }));
 
   const symbolCount = symbols.length;
   if (symbolCount > 0 && services[0]) {
+    const anchor = symbols.find((s) => s.evidenceChain.length) ?? symbols[0];
     services[0].evidence.push({
       snapshotHash: snapshot.hash,
-      filePath: symbols[0]?.filePath ?? "unknown",
+      filePath: anchor?.filePath ?? "unknown",
+      lineStart: anchor?.line,
+      lineEnd: anchor?.lineEnd,
+      symbolId: anchor?.id,
       extractionMethod: "AST" satisfies EvidenceRecord["extractionMethod"],
-      snippet: `${symbolCount} symbols extracted`,
+      snippet: `${symbolCount} symbols extracted (${anchor?.confidence ?? "Unknown"} confidence anchor)`,
     });
   }
 

@@ -5,6 +5,7 @@ import {
   assertConfidenceLevel,
   confidenceMeetsMinimum,
   downgradeConfidence,
+  mergeConfidence,
   inferConfidenceFromEvidence,
   isConfidenceLevel,
 } from "./confidence.js";
@@ -63,6 +64,11 @@ describe("confidence taxonomy", () => {
         },
       ]),
     ).toBe("Weakly Inferred");
+  });
+
+  it("merges confidence conservatively", () => {
+    expect(mergeConfidence("Confirmed", "Weakly Inferred")).toBe("Weakly Inferred");
+    expect(mergeConfidence("Strongly Inferred", "Confirmed")).toBe("Strongly Inferred");
   });
 
   it("downgrades confidence and applies disagreement penalty", () => {

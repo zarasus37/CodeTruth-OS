@@ -1,11 +1,13 @@
-import { createId } from "@codetruth/core";
 import type { DependencyEdge, SymbolRecord } from "@codetruth/core";
-import { lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
+import { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
+import { endLineOf, lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
 
 export function parseRustFile(
   filePath: string,
   content: string,
+  ctx: ParseEvidenceContext,
 ): { symbols: SymbolRecord[]; dependencies: DependencyEdge[] } {
+  const treeCtx = { ...ctx, engine: "treesitter" as const, parserEngine: "rust" };
   const symbols: SymbolRecord[] = [];
   const dependencies: DependencyEdge[] = [];
   const root = parseTree("rust", content);
@@ -15,52 +17,64 @@ export function parseRustFile(
     if (node.type === "function_item") {
       const name = nodeName(node);
       if (name) {
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind: "function",
-          filePath,
-          line: lineOf(node),
-        });
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind: "function",
+            filePath,
+            line: lineOf(node),
+            lineEnd: endLineOf(node),
+          }),
+        );
       }
     }
 
     if (node.type === "struct_item") {
       const name = nodeName(node);
       if (name) {
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind: "class",
-          filePath,
-          line: lineOf(node),
-        });
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind: "class",
+            filePath,
+            line: lineOf(node),
+            lineEnd: endLineOf(node),
+          }),
+        );
       }
     }
 
     if (node.type === "trait_item") {
       const name = nodeName(node);
       if (name) {
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind: "interface",
-          filePath,
-          line: lineOf(node),
-        });
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind: "interface",
+            filePath,
+            line: lineOf(node),
+            lineEnd: endLineOf(node),
+          }),
+        );
       }
     }
 
     if (node.type === "mod_item") {
       const name = nodeName(node);
       if (name) {
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind: "export",
-          filePath,
-          line: lineOf(node),
-        });
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind: "export",
+            filePath,
+            line: lineOf(node),
+            lineEnd: endLineOf(node),
+          }),
+        );
       }
     }
 
@@ -68,14 +82,24 @@ export function parseRustFile(
       const pathNode = node.childForFieldName("argument");
       const target = pathNode?.text?.split("::")[0]?.trim();
       if (target) {
-        dependencies.push({ from: filePath, to: target, kind: "imports" });
-        symbols.push({
-          id: createId("sym"),
-          name: target,
-          kind: "import",
-          filePath,
-          line: lineOf(node),
-        });
+        dependencies.push(
+          makeDependency({
+            ctx: treeCtx,
+            from: filePath,
+            to: target,
+            kind: "imports",
+            line: lineOf(node),
+          }),
+        );
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name: target,
+            kind: "import",
+            filePath,
+            line: lineOf(node),
+          }),
+        );
       }
     }
   });

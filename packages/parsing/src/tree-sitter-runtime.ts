@@ -3,6 +3,7 @@ import type { SyntaxNode } from "tree-sitter";
 import CSharp from "tree-sitter-c-sharp";
 import Go from "tree-sitter-go";
 import Java from "tree-sitter-java";
+import Python from "tree-sitter-python";
 import Ruby from "tree-sitter-ruby";
 import Rust from "tree-sitter-rust";
 
@@ -26,6 +27,7 @@ const LANGUAGE_MODULES = {
   java: Java,
   csharp: CSharp,
   ruby: Ruby,
+  python: Python,
 } as const;
 
 export type TreeSitterLanguageKey = keyof typeof LANGUAGE_MODULES;
@@ -50,6 +52,10 @@ export function nodeName(node: SyntaxNode, field = "name"): string | undefined {
 
 export function lineOf(node: SyntaxNode): number {
   return node.startPosition.row + 1;
+}
+
+export function endLineOf(node: SyntaxNode): number {
+  return node.endPosition.row + 1;
 }
 
 export function walkTree(node: SyntaxNode, visit: (node: SyntaxNode) => void): void {

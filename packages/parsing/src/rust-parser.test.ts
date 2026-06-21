@@ -8,7 +8,11 @@ fn main() {}
 struct App {}
 trait Handler {}
 `;
-    const result = parseRustFile("lib.rs", content);
+    const result = parseRustFile("lib.rs", content, {
+      snapshotHash: "snap_1",
+      engine: "treesitter",
+      parserEngine: "rust",
+    });
     expect(result.symbols.some((s) => s.name === "main")).toBe(true);
     expect(result.symbols.some((s) => s.name === "App")).toBe(true);
     expect(result.symbols.some((s) => s.name === "Handler")).toBe(true);

@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { mergeIncrementalParse } from "./incremental.js";
 
+function fixtureSymbol(id: string, name: string, filePath: string) {
+  const evidence = [{ snapshotHash: "h", filePath, extractionMethod: "AST" as const }];
+  return {
+    id,
+    name,
+    kind: "function" as const,
+    filePath,
+    confidence: "Confirmed" as const,
+    evidence,
+    evidenceChain: evidence,
+  };
+}
+
 describe("mergeIncrementalParse", () => {
   it("achieves 85%+ savings when only one file changes in a large snapshot", () => {
-    const baseSymbols = Array.from({ length: 100 }, (_, i) => ({
-      id: `sym_${i}`,
-      name: `fn${i}`,
-      kind: "function" as const,
-      filePath: `src/file${i}.ts`,
-    }));
+    const baseSymbols = Array.from({ length: 100 }, (_, i) =>
+      fixtureSymbol(`sym_${i}`, `fn${i}`, `src/file${i}.ts`),
+    );
 
     const merged = mergeIncrementalParse({
       base: {
@@ -28,7 +38,7 @@ describe("mergeIncrementalParse", () => {
         },
       },
       delta: {
-        symbols: [{ id: "sym_new", name: "changed", kind: "function", filePath: "src/file0.ts" }],
+        symbols: [fixtureSymbol("sym_new", "changed", "src/file0.ts")],
         dependencies: [],
         parserStats: {
           total: 1,

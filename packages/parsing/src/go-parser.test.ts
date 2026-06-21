@@ -8,9 +8,15 @@ import "fmt"
 func Hello() {}
 type User struct {}
 `;
-    const result = parseGoFile("main.go", content);
+    const result = parseGoFile("main.go", content, {
+      snapshotHash: "snap_1",
+      engine: "treesitter",
+      parserEngine: "go",
+    });
     expect(result.symbols.some((s) => s.name === "Hello" && s.kind === "function")).toBe(true);
     expect(result.symbols.some((s) => s.name === "User")).toBe(true);
     expect(result.dependencies.some((d) => d.to === "fmt")).toBe(true);
+    expect(result.symbols[0]?.line).toBeGreaterThan(0);
+    expect(result.symbols[0]?.confidence).toBe("Confirmed");
   });
 });

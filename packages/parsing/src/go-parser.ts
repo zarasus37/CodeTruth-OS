@@ -1,11 +1,13 @@
-import { createId } from "@codetruth/core";
 import type { DependencyEdge, SymbolRecord } from "@codetruth/core";
-import { lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
+import { makeDependency, makeSymbol, type ParseEvidenceContext } from "./evidence.js";
+import { endLineOf, lineOf, nodeName, parseTree, walkTree } from "./tree-sitter-runtime.js";
 
 export function parseGoFile(
   filePath: string,
   content: string,
+  ctx: ParseEvidenceContext,
 ): { symbols: SymbolRecord[]; dependencies: DependencyEdge[] } {
+  const treeCtx = { ...ctx, engine: "treesitter" as const, parserEngine: "go" };
   const symbols: SymbolRecord[] = [];
   const dependencies: DependencyEdge[] = [];
   const root = parseTree("go", content);
@@ -15,13 +17,16 @@ export function parseGoFile(
     if (node.type === "function_declaration" || node.type === "method_declaration") {
       const name = nodeName(node);
       if (name) {
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind: "function",
-          filePath,
-          line: lineOf(node),
-        });
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind: "function",
+            filePath,
+            line: lineOf(node),
+            lineEnd: endLineOf(node),
+          }),
+        );
       }
     }
 
@@ -32,15 +37,17 @@ export function parseGoFile(
         const name = nodeName(spec);
         if (!name) continue;
         const typeNode = spec.childForFieldName("type");
-        const kind =
-          typeNode?.type === "interface_type" ? "interface" : "class";
-        symbols.push({
-          id: createId("sym"),
-          name,
-          kind,
-          filePath,
-          line: lineOf(spec),
-        });
+        const kind = typeNode?.type === "interface_type" ? "interface" : "class";
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name,
+            kind,
+            filePath,
+            line: lineOf(spec),
+            lineEnd: endLineOf(spec),
+          }),
+        );
       }
     }
 
@@ -50,14 +57,24 @@ export function parseGoFile(
         const pathNode = importNode.childForFieldName("path");
         const importPath = pathNode?.text?.replace(/^"|"$/g, "");
         if (!importPath) return;
-        dependencies.push({ from: filePath, to: importPath, kind: "imports" });
-        symbols.push({
-          id: createId("sym"),
-          name: importPath,
-          kind: "import",
-          filePath,
-          line: lineOf(importNode),
-        });
+        dependencies.push(
+          makeDependency({
+            ctx: treeCtx,
+            from: filePath,
+            to: importPath,
+            kind: "imports",
+            line: lineOf(importNode),
+          }),
+        );
+        symbols.push(
+          makeSymbol({
+            ctx: treeCtx,
+            name: importPath,
+            kind: "import",
+            filePath,
+            line: lineOf(importNode),
+          }),
+        );
       });
     }
   });
