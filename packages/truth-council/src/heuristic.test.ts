@@ -12,8 +12,9 @@ describe("runHeuristicTruthCouncil", () => {
       [],
       { services: [], modules: [], edges: [] },
     );
-    expect(result.consensus.summary).toContain("Heuristic Truth Council");
+    expect(result.consensus.summary).toContain("3-phase deliberation");
     expect(result.phases).toHaveLength(3);
+    expect(result.phases[0]?.structuredAssessments).toHaveLength(5);
     expect(result.llmPowered).toBe(false);
   });
 
@@ -46,8 +47,8 @@ describe("runHeuristicTruthCouncil", () => {
       { services: [], modules: [], edges: [] },
     );
     expect(result.contradictionRegister.length).toBeGreaterThan(0);
-    expect(result.contradictionRegister.some((c) => c.claim.includes("Admin route exposed"))).toBe(
-      true,
-    );
+    const match = result.contradictionRegister.find((c) => c.subjectFindingId === "f1");
+    expect(match?.positions?.length).toBeGreaterThan(0);
+    expect(match?.impactSeverity).toBeDefined();
   });
 });

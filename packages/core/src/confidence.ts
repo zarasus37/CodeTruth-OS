@@ -55,3 +55,29 @@ export function inferConfidenceFromEvidence(evidence: EvidenceRecord[]): Confide
   if (methods.has("inference")) return "Weakly Inferred";
   return "Unknown";
 }
+
+const DESCENDING_LEVELS: ConfidenceLevel[] = [
+  "Confirmed",
+  "Strongly Inferred",
+  "Weakly Inferred",
+  "Unknown",
+  "Contradicted",
+];
+
+/** Lower confidence by N steps on the five-tier ladder. */
+export function downgradeConfidence(level: ConfidenceLevel, steps = 1): ConfidenceLevel {
+  const idx = DESCENDING_LEVELS.indexOf(level);
+  if (idx < 0) return "Unknown";
+  return DESCENDING_LEVELS[Math.min(DESCENDING_LEVELS.length - 1, idx + steps)] ?? "Unknown";
+}
+
+/** Apply disagreement penalty (0–1) as up to two confidence downgrades. */
+export function applyDisagreementPenalty(
+  base: ConfidenceLevel,
+  dissentCount: number,
+  totalModels: number,
+): { confidence: ConfidenceLevel; penalty: number } {
+  const penalty = totalModels > 0 ? Math.min(1, dissentCount / totalModels) : 0;
+  const steps = penalty >= 0.6 ? 2 : penalty > 0.25 ? 1 : 0;
+  return { confidence: downgradeConfidence(base, steps), penalty };
+}

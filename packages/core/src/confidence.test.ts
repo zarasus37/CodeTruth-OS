@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CONFIDENCE_LEVELS,
+  applyDisagreementPenalty,
   assertConfidenceLevel,
   confidenceMeetsMinimum,
+  downgradeConfidence,
   inferConfidenceFromEvidence,
   isConfidenceLevel,
 } from "./confidence.js";
@@ -61,5 +63,13 @@ describe("confidence taxonomy", () => {
         },
       ]),
     ).toBe("Weakly Inferred");
+  });
+
+  it("downgrades confidence and applies disagreement penalty", () => {
+    expect(downgradeConfidence("Confirmed", 1)).toBe("Strongly Inferred");
+    expect(downgradeConfidence("Confirmed", 2)).toBe("Weakly Inferred");
+    const penalized = applyDisagreementPenalty("Confirmed", 3, 5);
+    expect(penalized.penalty).toBe(0.6);
+    expect(penalized.confidence).toBe("Weakly Inferred");
   });
 });

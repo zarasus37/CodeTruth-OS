@@ -1,11 +1,10 @@
-import { createId } from "@codetruth/core";
+import { createId, serializeCouncilEvidenceForLlm } from "@codetruth/core";
 import type {
-  ArchitectureGraph,
-  BuildStateScorecard,
   ConsensusTruthReport,
   ContradictionRecord,
+  CouncilEvidenceBundle,
   CouncilPhaseResult,
-  Finding,
+  ModelAssessment,
 } from "@codetruth/core";
 import {
   completeChatWithMeta,
@@ -28,15 +27,15 @@ export type CouncilModel = (typeof COUNCIL_MODELS)[number];
 
 const MODEL_PROMPTS: Record<CouncilModel, string> = {
   "Architecture Model":
-    "You are the Architecture Model. Assess code structure, modularity, service boundaries, and integration health. Cite evidence paths when possible.",
+    "You are the Architecture Model. Assess code structure, modularity, service boundaries, and integration health. Every bullet must cite an evidence filePath from the shared pool.",
   "Runtime Model":
-    "You are the Runtime Model. Assess build readiness, deployability, health checks, and runtime failure modes.",
+    "You are the Runtime Model. Assess build readiness, deployability, health checks, and runtime failure modes. Cite evidence paths and snippets.",
   "DevOps Model":
-    "You are the DevOps Model. Assess CI/CD, observability, release workflow, and operational maturity.",
+    "You are the DevOps Model. Assess CI/CD, observability, release workflow, and operational maturity. Cite config paths from evidence.",
   "Security Model":
-    "You are the Security Model. Assess authentication, secrets handling, exposure risks, and security posture.",
+    "You are the Security Model. Assess authentication, secrets handling, exposure risks, and security posture. Cite file evidence for each claim.",
   "Planning Model":
-    "You are the Planning Model. Prioritize remediation, sequencing, and effort realism across findings.",
+    "You are the Planning Model. Prioritize remediation, sequencing, and effort realism. Reference finding ids and evidence when challenging scope.",
 };
 
 export interface LlmCouncilResult {
@@ -48,32 +47,6 @@ export interface LlmCouncilResult {
   provider?: string;
   model?: string;
   estimatedCostUsd?: number;
-}
-
-function evidenceContext(
-  scorecard: BuildStateScorecard,
-  findings: Finding[],
-  architecture: ArchitectureGraph,
-): string {
-  return JSON.stringify(
-    {
-      overall: scorecard.overall,
-      maturityStage: scorecard.maturityStage,
-      domains: scorecard.domains,
-      services: architecture.services.map((s) => s.name),
-      moduleCount: architecture.modules.length,
-      findings: findings.map((f) => ({
-        title: f.title,
-        severity: f.severity,
-        domain: f.domain,
-        confidence: f.confidence,
-        description: f.description,
-        evidence: f.evidence.slice(0, 2),
-      })),
-    },
-    null,
-    2,
-  );
 }
 
 function parseBulletList(text: string): string[] {
@@ -88,39 +61,52 @@ async function phase1(
   model: CouncilModel,
   context: string,
   onProvider?: (provider: string, modelName: string) => void,
-): Promise<string[]> {
+): Promise<ModelAssessment> {
   const messages: LlmMessage[] = [
     { role: "system", content: MODEL_PROMPTS[model] },
     {
       role: "user",
-      content: `Phase 1 — independent assessment. Return 4-8 bullet findings.\n\nEvidence:\n${context}`,
+      content: `Phase 1 — independent assessment. Return 4-8 bullet findings citing evidence file paths.\n\nStructured evidence:\n${context}`,
     },
   ];
   const result = await completeChatWithMeta(messages, { model: getCouncilModel(model) });
   onProvider?.(result.provider, result.model);
-  return parseBulletList(result.content);
+  const bullets = parseBulletList(result.content);
+  return {
+    model,
+    bullets,
+    confidence: bullets.length >= 4 ? "Strongly Inferred" : "Weakly Inferred",
+    findingsReviewed: bullets.length,
+    evidenceCited: [],
+  };
 }
 
 async function phase2Challenge(
   model: CouncilModel,
   context: string,
-  peerNotes: Record<CouncilModel, string[]>,
-): Promise<{ notes: string[]; contradictions: ContradictionRecord[] }> {
+  peerNotes: Record<CouncilModel, ModelAssessment>,
+): Promise<{ assessment: ModelAssessment; contradictions: ContradictionRecord[] }> {
   const messages: LlmMessage[] = [
     { role: "system", content: MODEL_PROMPTS[model] },
     {
       role: "user",
-      content: `Phase 2 — challenge peer assessments with evidence-weighted rebuttals.
+      content: `Phase 2 — cross-review with evidence-weighted rebuttals.
 Return two sections:
 CHALLENGES:
-- contradiction statement referencing evidence
+- contradiction statement citing specific filePath/snippet from evidence pool
 REVISED:
 - updated assessment bullets
 
 Peer assessments:
-${JSON.stringify(peerNotes, null, 2)}
+${JSON.stringify(
+  Object.fromEntries(
+    COUNCIL_MODELS.map((m) => [m, peerNotes[m].bullets]),
+  ),
+  null,
+  2,
+)}
 
-Evidence:
+Structured evidence:
 ${context}`,
     },
   ];
@@ -135,31 +121,56 @@ ${context}`,
 
   const contradictions: ContradictionRecord[] = challenges.slice(0, 4).map((challenge) => ({
     id: createId("contradiction"),
-    claim: `${model} peer review`,
+    claim: `${model} independent assessment`,
     challenge,
     models: [model, "Truth Council"],
     severity: "unresolved" as const,
+    impactSeverity: "medium" as const,
+    disagreementPenalty: 0.3,
+    resolution: "preserved_disagreement" as const,
+    positions: [
+      {
+        model,
+        stance: "challenges" as const,
+        claim: challenge,
+        confidence: "Weakly Inferred" as const,
+        evidenceRefs: [],
+      },
+    ],
   }));
 
-  return { notes: notes.length ? notes : parseBulletList(content), contradictions };
+  const bullets = notes.length ? notes : parseBulletList(content);
+  return {
+    assessment: {
+      model,
+      bullets,
+      confidence: contradictions.length ? "Strongly Inferred" : "Confirmed",
+      findingsReviewed: bullets.length,
+      evidenceCited: [],
+    },
+    contradictions,
+  };
 }
 
-async function phase3Consensus(context: string, phases: CouncilPhaseResult[]): Promise<ConsensusTruthReport> {
+async function phase3Consensus(
+  context: string,
+  phases: CouncilPhaseResult[],
+): Promise<ConsensusTruthReport> {
   const messages: LlmMessage[] = [
     {
       role: "system",
       content:
-        "You are the Consensus Builder. Synthesize agreed claims, inferred claims, contradictions, and unknowns as JSON.",
+        "You are the Consensus Builder. Synthesize agreed claims, inferred claims, contradictions, and unknowns. Preserve disagreements — do not average conflicting positions. Return strict JSON.",
     },
     {
       role: "user",
       content: `Return strict JSON:
-{"summary":"","confirmedClaims":[],"inferredClaims":[],"contradictions":[],"unknowns":[]}
+{"summary":"","confirmedClaims":[],"inferredClaims":[],"contradictions":[],"unknowns":[],"synthesisConfidence":"Strongly Inferred"}
 
 Council phases:
 ${JSON.stringify(phases, null, 2)}
 
-Evidence:
+Structured evidence:
 ${context}`,
     },
   ];
@@ -183,13 +194,12 @@ ${context}`,
     inferredClaims: [],
     contradictions: [],
     unknowns: [],
+    synthesisConfidence: "Unknown",
   };
 }
 
 export async function runLlmTruthCouncil(
-  scorecard: BuildStateScorecard,
-  findings: Finding[],
-  architecture: ArchitectureGraph,
+  bundle: CouncilEvidenceBundle,
 ): Promise<LlmCouncilResult> {
   if (!isLlmEnabled()) {
     throw new Error("LLM is not configured");
@@ -199,21 +209,21 @@ export async function runLlmTruthCouncil(
   let primaryProvider: string | undefined;
   let primaryModel: string | undefined;
 
-  const context = evidenceContext(scorecard, findings, architecture);
+  const context = serializeCouncilEvidenceForLlm(bundle);
 
   const phase1Results = Object.fromEntries(
     await Promise.all(
       COUNCIL_MODELS.map(async (model) => {
-        const notes = await phase1(model, context, (provider, modelName) => {
+        const assessment = await phase1(model, context, (provider, modelName) => {
           if (!primaryProvider) {
             primaryProvider = provider;
             primaryModel = modelName;
           }
         });
-        return [model, notes] as const;
+        return [model, assessment] as const;
       }),
     ),
-  ) as Record<CouncilModel, string[]>;
+  ) as Record<CouncilModel, ModelAssessment>;
 
   const phase2Results = Object.fromEntries(
     await Promise.all(
@@ -222,24 +232,36 @@ export async function runLlmTruthCouncil(
         return [model, result] as const;
       }),
     ),
-  ) as Record<CouncilModel, { notes: string[]; contradictions: ContradictionRecord[] }>;
+  ) as Record<CouncilModel, { assessment: ModelAssessment; contradictions: ContradictionRecord[] }>;
 
   const contradictionRegister = Object.values(phase2Results).flatMap((r) => r.contradictions);
   const modelNotes = Object.fromEntries(
-    COUNCIL_MODELS.map((model) => [model, phase2Results[model].notes]),
+    COUNCIL_MODELS.map((model) => [model, phase2Results[model].assessment.bullets]),
   ) as Record<CouncilModel, string[]>;
 
   const phases: CouncilPhaseResult[] = [
-    { phase: "independent", modelAssessments: phase1Results, contradictions: [] },
+    {
+      phase: "independent",
+      modelAssessments: Object.fromEntries(
+        COUNCIL_MODELS.map((m) => [m, phase1Results[m].bullets]),
+      ),
+      structuredAssessments: Object.values(phase1Results),
+      contradictions: [],
+      summary: "LLM independent first-pass completed for all five models.",
+    },
     {
       phase: "cross_review",
       modelAssessments: modelNotes,
+      structuredAssessments: Object.values(phase2Results).map((r) => r.assessment),
       contradictions: contradictionRegister,
+      summary: `${contradictionRegister.length} cross-review challenge(s) recorded with evidence citations.`,
     },
     {
       phase: "consensus",
       modelAssessments: modelNotes,
+      structuredAssessments: Object.values(phase2Results).map((r) => r.assessment),
       contradictions: contradictionRegister.filter((c) => c.severity === "unresolved"),
+      summary: "Consensus synthesis preserves unresolved disagreements.",
     },
   ];
 

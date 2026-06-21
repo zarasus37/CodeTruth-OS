@@ -303,10 +303,16 @@ export async function runPipeline(
     () => runHeuristicTruthCouncil(scorecard, findings, architecture),
   );
 
+  if (council.adjustedFindings?.length) {
+    findings = council.adjustedFindings;
+    diagnostics.confidenceSummary = buildConfidenceSummary(findings);
+  }
+
   await report("truth_council", 85, {
     consensusSummary: council.consensus.summary.slice(0, 240),
     findingCount: findings.length,
     llmPowered: council.llmPowered,
+    llmFallbackReason: council.llmFallbackReason,
   });
 
   const roadmap = await runIsolatedStage(

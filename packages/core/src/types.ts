@@ -373,6 +373,7 @@ export interface PipelineStreamEvent {
     taskCount?: number;
     incrementalSavingsPercent?: number;
     llmPowered?: boolean;
+    llmFallbackReason?: string;
     marketplaceAnalyzers?: string[];
     stageState?: PipelineEntityState;
     failedFiles?: number;
@@ -468,12 +469,41 @@ export interface BuildStateScorecard {
   domains: DomainScore[];
 }
 
+export interface WeightedClaim {
+  claim: string;
+  confidence: ConfidenceLevel;
+  supportingModels: string[];
+  dissentingModels: string[];
+  disagreementPenalty: number;
+}
+
 export interface ConsensusTruthReport {
   summary: string;
   confirmedClaims: string[];
   inferredClaims: string[];
   contradictions: string[];
   unknowns: string[];
+  /** Confidence-weighted synthesis with disagreement penalties applied. */
+  weightedClaims?: WeightedClaim[];
+  synthesisConfidence?: ConfidenceLevel;
+}
+
+export type ContradictionImpactSeverity = "critical" | "high" | "medium" | "low";
+
+export interface CouncilModelPosition {
+  model: string;
+  stance: "supports" | "challenges" | "neutral";
+  claim: string;
+  confidence: ConfidenceLevel;
+  evidenceRefs: string[];
+}
+
+export interface ModelAssessment {
+  model: string;
+  bullets: string[];
+  confidence: ConfidenceLevel;
+  findingsReviewed: number;
+  evidenceCited: EvidenceRecord[];
 }
 
 export interface PlannerTask {
@@ -497,12 +527,48 @@ export interface ContradictionRecord {
   challenge: string;
   models: string[];
   severity: "resolved" | "unresolved";
+  impactSeverity?: ContradictionImpactSeverity;
+  subjectFindingId?: string;
+  positions?: CouncilModelPosition[];
+  claimEvidence?: EvidenceRecord[];
+  challengeEvidence?: EvidenceRecord[];
+  disagreementPenalty?: number;
+  resolution?: "preserved_disagreement" | "claim_downgraded" | "challenge_rejected";
 }
 
 export interface CouncilPhaseResult {
   phase: "independent" | "cross_review" | "consensus";
   modelAssessments: Record<string, string[]>;
+  structuredAssessments?: ModelAssessment[];
   contradictions: ContradictionRecord[];
+  summary?: string;
+}
+
+export interface CouncilFindingContext {
+  id: string;
+  title: string;
+  severity: SeverityLevel;
+  domain: ScoringDomain;
+  confidence: ConfidenceLevel;
+  description: string;
+  gapCategory?: GapCategory;
+  evidenceChain: EvidenceRecord[];
+}
+
+export interface CouncilEvidenceBundle {
+  scorecard: BuildStateScorecard;
+  architecture: {
+    services: Array<{
+      id: string;
+      name: string;
+      confidence: ConfidenceLevel;
+      evidence: EvidenceRecord[];
+    }>;
+    modules: Array<{ id: string; name: string; serviceId?: string; confidence: ConfidenceLevel }>;
+    edges: Array<{ from: string; to: string; kind: string; confidence: ConfidenceLevel }>;
+  };
+  findings: CouncilFindingContext[];
+  evidencePool: EvidenceRecord[];
 }
 
 export interface IncrementalComputeMetrics {

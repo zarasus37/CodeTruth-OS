@@ -62,8 +62,38 @@ function renderContradictionRegister(
       `- **Challenge:** ${record.challenge}`,
       `- **Models:** ${record.models.join(", ")}`,
       `- **Status:** ${record.severity}`,
-      "",
     );
+    if (record.impactSeverity) {
+      lines.push(`- **Impact:** ${record.impactSeverity}`);
+    }
+    if (record.disagreementPenalty != null) {
+      lines.push(`- **Disagreement penalty:** ${(record.disagreementPenalty * 100).toFixed(0)}%`);
+    }
+    if (record.positions?.length) {
+      lines.push("- **Model positions:**");
+      for (const pos of record.positions) {
+        lines.push(
+          `  - ${pos.model} (${pos.stance}, ${pos.confidence}): ${pos.claim}${
+            pos.evidenceRefs.length ? ` — refs: ${pos.evidenceRefs.join(", ")}` : ""
+          }`,
+        );
+      }
+    }
+    if (record.claimEvidence?.length) {
+      lines.push(
+        `- **Claim evidence:** ${record.claimEvidence
+          .map((e) => `${e.filePath}${e.lineStart != null ? `:${e.lineStart}` : ""}`)
+          .join("; ")}`,
+      );
+    }
+    if (record.challengeEvidence?.length) {
+      lines.push(
+        `- **Challenge evidence:** ${record.challengeEvidence
+          .map((e) => `${e.filePath}${e.snippet ? ` ("${e.snippet.slice(0, 60)}")` : ""}`)
+          .join("; ")}`,
+      );
+    }
+    lines.push("");
   }
 
   for (const text of consensusContradictions) {
