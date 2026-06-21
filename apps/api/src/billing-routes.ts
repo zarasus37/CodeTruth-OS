@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import Stripe from "stripe";
 import type { SubscriptionPlan } from "@codetruth/core";
-import { getPlanDefinition, listPublicPlans } from "@codetruth/billing";
+import { assertFeature, BillingGateError, getPlanDefinition, listPublicPlans } from "@codetruth/billing";
 import { authenticate } from "./auth.js";
 import {
   getBillingSummary,
@@ -112,10 +112,13 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         });
       }
 
+      const teamSeats =
+        plan === "team" ? getPlanDefinition("team").limits.seatsIncluded : 1;
+
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer: customerId,
-        line_items: [{ price: priceId, quantity: 1 }],
+        line_items: [{ price: priceId, quantity: teamSeats }],
         success_url: `${appUrl()}/?billing=success&workspace=${request.params.workspaceId}`,
         cancel_url: `${appUrl()}/?billing=cancel&workspace=${request.params.workspaceId}`,
         metadata: {
@@ -194,6 +197,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       const plan = (session.metadata?.plan as SubscriptionPlan | undefined) ?? "pro";
       if (workspaceId && session.subscription) {
         const current = await getOrCreateSubscription(workspaceId);
+        const seatsIncluded = plan === "team" ? getPlanDefinition("team").limits.seatsIncluded : undefined;
         await store.saveWorkspaceSubscription({
           ...current,
           plan,
@@ -201,6 +205,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
           stripeCustomerId: typeof session.customer === "string" ? session.customer : current.stripeCustomerId,
           stripeSubscriptionId:
             typeof session.subscription === "string" ? session.subscription : current.stripeSubscriptionId,
+          seatCount: seatsIncluded ?? current.seatCount,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -242,4 +247,94 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
     return { received: true };
   });
+
+  app.get<{ Params: { workspaceId: string } }>(
+    "/workspaces/:workspaceId/seats",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const member = await requireWorkspaceAccess(
+        request,
+        reply,
+        request.params.workspaceId,
+        "workspace:manage",
+      );
+      if (!member) return;
+      const summary = await getBillingSummary(request.params.workspaceId);
+      return { seats: summary.seats, subscription: summary.subscription, plan: summary.plan };
+    },
+  );
+
+  app.post<{
+    Params: { workspaceId: string };
+    Body: { targetSeatCount?: number };
+  }>(
+    "/workspaces/:workspaceId/billing/seats",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const member = await requireWorkspaceAccess(
+        request,
+        reply,
+        request.params.workspaceId,
+        "workspace:manage",
+      );
+      if (!member) return;
+
+      const subscription = await getOrCreateSubscription(request.params.workspaceId);
+      try {
+        assertFeature(subscription, "team_seats");
+      } catch (error) {
+        if (error instanceof BillingGateError) {
+          return reply.code(402).send({
+            error: error.message,
+            code: error.code,
+            upgradePlan: error.upgradePlan,
+          });
+        }
+        throw error;
+      }
+
+      const plan = getPlanDefinition(subscription.plan);
+      const members = await store.listWorkspaceMembers(request.params.workspaceId);
+      const targetSeatCount = request.body?.targetSeatCount;
+      if (!targetSeatCount || !Number.isFinite(targetSeatCount)) {
+        return reply.code(400).send({ error: "targetSeatCount is required" });
+      }
+
+      if (targetSeatCount < plan.limits.seatsIncluded) {
+        return reply.code(400).send({
+          error: `Team plan includes ${plan.limits.seatsIncluded} seats minimum`,
+        });
+      }
+      if (targetSeatCount > plan.limits.maxSeats) {
+        return reply.code(400).send({ error: `Maximum ${plan.limits.maxSeats} seats on ${plan.id}` });
+      }
+      if (targetSeatCount < members.length) {
+        return reply.code(400).send({
+          error: `Cannot set seats below current member count (${members.length})`,
+        });
+      }
+
+      const stripe = stripeClient();
+      if (stripe && subscription.stripeSubscriptionId) {
+        const sub = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+        const item = sub.items.data[0];
+        if (!item) {
+          return reply.code(503).send({ error: "Stripe subscription has no billable item" });
+        }
+        await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+          items: [{ id: item.id, quantity: targetSeatCount }],
+          proration_behavior: "create_prorations",
+        });
+      }
+
+      await store.saveWorkspaceSubscription({
+        ...subscription,
+        seatCount: targetSeatCount,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const summary = await getBillingSummary(request.params.workspaceId);
+      return { seats: summary.seats, subscription: summary.subscription };
+    },
+  );
 }

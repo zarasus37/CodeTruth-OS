@@ -42,6 +42,8 @@ import {
 import { registerCollaborationRoutes } from "./collaboration-routes.js";
 import { dataRoot, snapshotRoot, storageBackend, store, uploadRoot, webRoot } from "./context.js";
 import { registerGitHubRoutes } from "./github-routes.js";
+import { registerIntegrationsRoutes } from "./integrations-routes.js";
+import { registerQualityGateRoutes } from "./quality-gate-routes.js";
 import { buildFullReport } from "./report-context.js";
 import { registerSnapshotRoutes } from "./snapshot-routes.js";
 import { registerCognitionRoutes } from "./cognition-routes.js";
@@ -107,6 +109,8 @@ async function bootstrap() {
       llmModel: process.env.LLM_MODEL ?? "gpt-4o-mini",
       githubApp: isGitHubAppEnabled(),
       githubAppId: process.env.GITHUB_APP_ID ?? null,
+      githubAppSlug: process.env.GITHUB_APP_SLUG ?? null,
+      publicApiUrl: process.env.PUBLIC_API_URL ?? null,
       githubPat: Boolean(process.env.GITHUB_TOKEN),
     },
     features: [
@@ -590,6 +594,8 @@ async function bootstrap() {
   await registerComplianceRoutes(app);
   await registerCognitionRoutes(app);
   await registerGitHubRoutes(app);
+  await registerQualityGateRoutes(app);
+  await registerIntegrationsRoutes(app);
 
   await app.register(staticPlugin, {
     root: webRoot,

@@ -96,9 +96,17 @@
           <div id="billing-panel" class="billing-panel hidden">
             <p id="billing-plan" class="muted"></p>
             <p id="billing-usage" class="muted"></p>
+            <p id="billing-seats" class="muted hidden"></p>
             <div class="invite-row">
               <button id="upgrade-pro-btn" class="ghost hidden">Upgrade to Pro</button>
               <button id="billing-portal-btn" class="ghost hidden">Manage billing</button>
+            </div>
+            <div id="seat-management" class="seat-management hidden">
+              <label>
+                Add seats
+                <input type="number" id="seat-target-count" min="5" max="50" step="1" />
+              </label>
+              <button id="add-seats-btn" type="button" class="ghost">Update seat count</button>
             </div>
           </div>
           <div class="invite-row">

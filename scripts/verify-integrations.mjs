@@ -46,10 +46,22 @@ async function checkRedis() {
   }
 }
 
+async function checkPublicApiUrl() {
+  const url = process.env.PUBLIC_API_URL;
+  if (!url) {
+    return { ok: false, detail: "PUBLIC_API_URL missing — required for GitHub webhooks in production" };
+  }
+  if (url.includes("localhost")) {
+    return { ok: true, detail: `${url} (local dev — use ngrok/tunnel URL for GitHub webhooks)` };
+  }
+  return { ok: true, detail: url };
+}
+
 async function checkGitHubApp() {
   const appId = process.env.GITHUB_APP_ID;
   const keyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
   const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET;
+  const slug = process.env.GITHUB_APP_SLUG;
   if (!appId || !keyPath || !webhookSecret) {
     return { ok: false, detail: "GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_PATH, or GITHUB_APP_WEBHOOK_SECRET missing" };
   }
@@ -60,9 +72,10 @@ async function checkGitHubApp() {
     signer.update("codetruth-verify");
     signer.end();
     signer.sign(pem, "base64url");
+    const placeholder = appId === "000000" || appId === "0";
     return {
-      ok: true,
-      detail: `appId=${appId}, webhookSecret=set, pem=ok${appId === "000000" ? " (replace placeholder App ID)" : ""}`,
+      ok: !placeholder,
+      detail: `appId=${appId}, slug=${slug ?? "missing"}, webhookSecret=set, pem=ok${placeholder ? " (replace placeholder App ID)" : ""}`,
     };
   } catch (error) {
     return { ok: false, detail: error.message };
@@ -135,6 +148,7 @@ async function main() {
   console.log("CodeTruth OS integration check\n");
 
   printResult("Redis (async queue + SSE pub/sub)", await checkRedis());
+  printResult("PUBLIC_API_URL (webhooks + CI)", await checkPublicApiUrl());
   printResult("GitHub App (JWT + webhooks)", await checkGitHubApp());
   printResult("LLM Truth Council", await checkLlm());
   printResult("API /health", await checkApiHealth());

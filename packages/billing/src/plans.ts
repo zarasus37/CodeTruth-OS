@@ -117,6 +117,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       "compliance_audit_export",
       "rbac_advanced",
       "team_seats",
+      "quality_gate",
     ],
   },
   enterprise: {
@@ -150,6 +151,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       "compliance_audit_export",
       "rbac_advanced",
       "team_seats",
+      "quality_gate",
     ],
   },
 };

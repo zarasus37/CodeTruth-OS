@@ -54,3 +54,10 @@ export const ASSIGNABLE_ROLES: WorkspaceRole[] = [
   "reviewer",
   "viewer",
 ];
+
+export {
+  DEFAULT_QUALITY_GATE_POLICY,
+  evaluateQualityGate,
+  mergeQualityGatePolicy,
+  parseBlockSeverities,
+} from "./quality-gate.js";

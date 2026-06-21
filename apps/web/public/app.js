@@ -935,6 +935,9 @@ async function loadBilling() {
   const panel = document.getElementById("billing-panel");
   const planEl = document.getElementById("billing-plan");
   const usageEl = document.getElementById("billing-usage");
+  const seatsEl = document.getElementById("billing-seats");
+  const seatMgmt = document.getElementById("seat-management");
+  const seatInput = document.getElementById("seat-target-count");
   const upgradeBtn = document.getElementById("upgrade-pro-btn");
   const portalBtn = document.getElementById("billing-portal-btn");
 
@@ -948,6 +951,20 @@ async function loadBilling() {
     panel.classList.remove("hidden");
     planEl.textContent = `Plan: ${billing.plan.name} (${billing.subscription.status}) · $${billing.plan.pricing.monthlyUsd ?? 0}/mo`;
     usageEl.textContent = `Usage: ${billing.usage.analysesCount}/${billing.limits.analysesPerMonth} analyses · ${billing.usage.llmCouncilRuns}/${billing.limits.llmCouncilRunsPerMonth} LLM runs`;
+
+    const hasTeamSeats = billing.features?.includes("team_seats");
+    if (hasTeamSeats && billing.seats) {
+      seatsEl.classList.remove("hidden");
+      seatsEl.textContent = `Seats: ${billing.seats.used}/${billing.seats.purchased} used · ${billing.seats.available} available (${billing.seats.included} included, +$${billing.seats.additionalSeatUsd ?? 0}/seat)`;
+      seatMgmt.classList.remove("hidden");
+      seatInput.min = String(billing.seats.included);
+      seatInput.max = String(billing.seats.maxSeats);
+      seatInput.value = String(Math.max(billing.seats.purchased, billing.seats.used + 1));
+    } else {
+      seatsEl.classList.add("hidden");
+      seatMgmt.classList.add("hidden");
+    }
+
     const isPaid = billing.subscription.plan !== "free" && billing.subscription.status === "active";
     upgradeBtn.classList.toggle("hidden", isPaid);
     portalBtn.classList.toggle("hidden", !billing.subscription.stripeCustomerId);
@@ -1389,12 +1406,33 @@ document.getElementById("invite-btn").addEventListener("click", async () => {
   const email = document.getElementById("invite-email").value.trim();
   const role = document.getElementById("invite-role").value;
   if (!email || !state.workspaceId) return;
-  await api(`/workspaces/${state.workspaceId}/invite`, {
-    method: "POST",
-    body: JSON.stringify({ email, role }),
-  });
-  document.getElementById("invite-email").value = "";
-  alert(`Invited ${email} as ${role}.`);
+  try {
+    await api(`/workspaces/${state.workspaceId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    });
+    document.getElementById("invite-email").value = "";
+    alert(`Invited ${email} as ${role}.`);
+    await loadBilling();
+  } catch (error) {
+    if (!error.upgrade) alert(error.message);
+  }
+});
+
+document.getElementById("add-seats-btn").addEventListener("click", async () => {
+  if (!state.workspaceId) return;
+  const target = Number(document.getElementById("seat-target-count").value);
+  if (!target) return;
+  try {
+    await api(`/workspaces/${state.workspaceId}/billing/seats`, {
+      method: "POST",
+      body: JSON.stringify({ targetSeatCount: target }),
+    });
+    await loadBilling();
+    alert(`Seat count updated to ${target}.`);
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 document.getElementById("reanalyze-btn").addEventListener("click", async () => {

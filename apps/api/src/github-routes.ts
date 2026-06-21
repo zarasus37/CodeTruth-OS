@@ -4,6 +4,7 @@ import { createId } from "@codetruth/core";
 import type { GitHubProjectConfig } from "@codetruth/core";
 import {
   generateWebhookSecret,
+  getGitHubAppInstallUrl,
   isGitHubAppEnabled,
   loadGitHubAppConfig,
   parseInstallationEvent,
@@ -100,10 +101,12 @@ export async function registerGitHubRoutes(app: FastifyInstance): Promise<void> 
         project,
         authMode,
         githubAppEnabled: isGitHubAppEnabled(),
+        installUrl: getGitHubAppInstallUrl(),
+        publicApiUrl: publicApiUrl(request),
         webhook: {
           url: `${publicApiUrl(request)}/webhooks/github`,
           secret: authMode === "app" && appConfig?.webhookSecret ? appConfig.webhookSecret : github.webhookSecret,
-          events: authMode === "app" ? ["push", "installation"] : ["push"],
+          events: authMode === "app" ? ["push", "installation", "installation_repositories"] : ["push"],
         },
       };
     },

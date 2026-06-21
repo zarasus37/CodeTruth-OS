@@ -38,7 +38,10 @@ export function hasFeature(subscription: WorkspaceSubscription, feature: Billing
 export function assertFeature(subscription: WorkspaceSubscription, feature: BillingFeature): void {
   if (!hasFeature(subscription, feature)) {
     const requiredPlan: SubscriptionPlan =
-      feature === "team_seats" || feature === "compliance_audit_export" || feature === "rbac_advanced"
+      feature === "team_seats" ||
+      feature === "compliance_audit_export" ||
+      feature === "rbac_advanced" ||
+      feature === "quality_gate"
         ? "team"
         : "pro";
     throw new BillingGateError(

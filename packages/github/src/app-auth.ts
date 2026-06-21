@@ -8,7 +8,15 @@ export interface GitHubAppConfig {
 }
 
 export function isGitHubAppEnabled(): boolean {
-  return Boolean(process.env.GITHUB_APP_ID && (process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_PATH));
+  const appId = process.env.GITHUB_APP_ID;
+  const hasKey = Boolean(process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_PATH);
+  return Boolean(appId && appId !== "000000" && appId !== "0" && hasKey);
+}
+
+export function getGitHubAppInstallUrl(slug?: string): string | null {
+  const appSlug = slug ?? process.env.GITHUB_APP_SLUG;
+  if (!appSlug) return null;
+  return `https://github.com/apps/${appSlug}/installations/new`;
 }
 
 export async function loadGitHubAppConfig(): Promise<GitHubAppConfig | null> {

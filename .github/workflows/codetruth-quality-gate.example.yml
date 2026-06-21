@@ -1,0 +1,24 @@
+# Example: add to your repo after connecting a CodeTruth project (Team plan).
+# Copy to .github/workflows/codetruth-quality-gate.yml and set secrets.
+name: CodeTruth Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CodeTruth quality gate
+        uses: ./.github/actions/quality-gate
+        with:
+          api-url: ${{ secrets.CODETRUTH_API_URL }}
+          api-token: ${{ secrets.CODETRUTH_API_TOKEN }}
+          workspace-id: ${{ secrets.CODETRUTH_WORKSPACE_ID }}
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          block-severities: Critical blocker,High-risk flaw

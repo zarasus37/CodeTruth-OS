@@ -70,21 +70,34 @@ export function sendBillingError(
       message: error.message,
     },
   });
+  const isSeatLimit = error.code === "seat_limit_exceeded";
   return reply.code(402).send({
     error: error.message,
     code: error.code,
     upgradePlan: error.upgradePlan,
-    upgrade: {
-      plan: error.upgradePlan ?? "pro",
-      headline: "Upgrade to keep your cognition layer running",
-      valueProps: [
-        "Continuous analysis on every meaningful commit",
-        "GitHub webhooks and live re-analysis schedules",
-        "Spatial navigator, exports, and snapshot history",
-        "LLM Truth Council for adversarial system truth",
-      ],
-      cta: "Start Pro — unlock continuous cognition",
-    },
+    upgrade: isSeatLimit
+      ? {
+          plan: "team",
+          headline: "Add seats to invite more teammates",
+          valueProps: [
+            "Team plan includes 5 seats",
+            "Additional seats billed at $49/seat per month",
+            "CI quality gates block merges on critical findings",
+            "GitHub App webhooks for continuous truth analysis",
+          ],
+          cta: "Add seats or upgrade to Team",
+        }
+      : {
+          plan: error.upgradePlan ?? "pro",
+          headline: "Upgrade to keep your cognition layer running",
+          valueProps: [
+            "Continuous analysis on every meaningful commit",
+            "GitHub webhooks and live re-analysis schedules",
+            "Spatial navigator, exports, and snapshot history",
+            "LLM Truth Council for adversarial system truth",
+          ],
+          cta: "Start Pro — unlock continuous cognition",
+        },
   });
 }
 
@@ -195,6 +208,8 @@ export async function getBillingSummary(workspaceId: string) {
   const ctx = await buildGateContext(workspaceId);
   const plan = resolveActivePlan(ctx.subscription);
   const definition = getPlanDefinition(plan);
+  const purchasedSeats = ctx.subscription.seatCount ?? definition.limits.seatsIncluded;
+  const usedSeats = ctx.memberCount ?? 1;
 
   return {
     subscription: ctx.subscription,
@@ -202,6 +217,14 @@ export async function getBillingSummary(workspaceId: string) {
     plan: definition,
     limits: definition.limits,
     features: definition.features,
+    seats: {
+      included: definition.limits.seatsIncluded,
+      purchased: purchasedSeats,
+      used: usedSeats,
+      available: Math.max(0, purchasedSeats - usedSeats),
+      additionalSeatUsd: definition.pricing.additionalSeatUsd,
+      maxSeats: definition.limits.maxSeats,
+    },
   };
 }
 

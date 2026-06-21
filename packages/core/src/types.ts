@@ -596,7 +596,8 @@ export type BillingFeature =
   | "portfolio"
   | "compliance_audit_export"
   | "rbac_advanced"
-  | "team_seats";
+  | "team_seats"
+  | "quality_gate";
 
 export interface User {
   id: string;
@@ -758,6 +759,23 @@ export interface GitHubProjectConfig {
   installationId?: number;
 }
 
+export interface QualityGatePolicy {
+  /** Severities that fail CI / merge checks. */
+  blockSeverities: SeverityLevel[];
+  /** Optional minimum overall score (0–100). */
+  minOverallScore?: number;
+}
+
+export interface QualityGateResult {
+  passed: boolean;
+  analysisId?: string;
+  snapshotId?: string;
+  overallScore?: number;
+  blockedFindings: Array<Pick<Finding, "id" | "title" | "severity" | "domain" | "description">>;
+  policy: QualityGatePolicy;
+  summary: string;
+}
+
 export interface Project {
   id: string;
   workspaceId: string;
@@ -765,6 +783,7 @@ export interface Project {
   createdAt: string;
   latestSnapshotId?: string;
   github?: GitHubProjectConfig;
+  qualityGate?: QualityGatePolicy;
 }
 
 export type AnalysisTriggerSource =
