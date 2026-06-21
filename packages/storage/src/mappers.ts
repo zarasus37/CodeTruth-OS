@@ -177,6 +177,7 @@ export function toWorkspaceUsage(row: {
   analysesCount: number;
   llmCouncilRuns: number;
   projectsCreated: number;
+  llmCostUsd?: number | null;
 }): WorkspaceUsage {
   return {
     workspaceId: row.workspaceId,
@@ -184,6 +185,7 @@ export function toWorkspaceUsage(row: {
     analysesCount: row.analysesCount,
     llmCouncilRuns: row.llmCouncilRuns,
     projectsCreated: row.projectsCreated,
+    llmCostUsd: row.llmCostUsd ?? 0,
   };
 }
 

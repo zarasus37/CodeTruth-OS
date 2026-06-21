@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AnalysisJob, PipelineStreamEvent, SnapshotRecord } from "@codetruth/core";
-import { createEmptyUsage, currentUsagePeriod, incrementUsage } from "@codetruth/billing";
+import {
+  addLlmCost,
+  canUseLlmCouncil,
+  createEmptyUsage,
+  currentUsagePeriod,
+  incrementUsage,
+} from "@codetruth/billing";
 import { activityFromAnalysis, createActivityEvent } from "@codetruth/cognition";
 import { runPipeline } from "@codetruth/pipeline";
 import type { DataStore } from "@codetruth/storage";
@@ -15,6 +21,20 @@ export interface ProcessorOptions {
 async function appendStreamEvent(analysis: AnalysisJob, event: PipelineStreamEvent): Promise<void> {
   analysis.streamEvents = [...(analysis.streamEvents ?? []), event].slice(-200);
   await publishStreamEvent(event);
+}
+
+function findBaseArtifacts(
+  analyses: AnalysisJob[],
+  baseSnapshotId: string,
+): AnalysisJob["artifacts"] | undefined {
+  return analyses
+    .filter(
+      (a) =>
+        a.status === "completed" &&
+        a.snapshotId === baseSnapshotId &&
+        a.artifacts?.symbols?.length,
+    )
+    .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))[0]?.artifacts;
 }
 
 export async function processAnalysisJob(
@@ -34,6 +54,7 @@ export async function processAnalysisJob(
     snapshot.rootPath = snapshotPath;
 
     let incrementalBaseSnapshot: SnapshotRecord | undefined;
+    let incrementalBaseArtifacts: AnalysisJob["artifacts"];
     if (analysis.incrementalBaseSnapshotId) {
       const basePath = path.join(options.snapshotRoot, analysis.incrementalBaseSnapshotId);
       try {
@@ -43,6 +64,29 @@ export async function processAnalysisJob(
       } catch {
         incrementalBaseSnapshot = undefined;
       }
+
+      const projectAnalyses = await options.store.listAnalyses(analysis.projectId);
+      incrementalBaseArtifacts = findBaseArtifacts(
+        projectAnalyses,
+        analysis.incrementalBaseSnapshotId,
+      );
+    }
+
+    const project = await options.store.getProject(analysis.projectId);
+    let useLlmCouncil = false;
+    if (project) {
+      const period = currentUsagePeriod();
+      const subscription =
+        (await options.store.getWorkspaceSubscription(project.workspaceId)) ?? {
+          workspaceId: project.workspaceId,
+          plan: "free" as const,
+          status: "active" as const,
+          updatedAt: new Date().toISOString(),
+        };
+      const usage =
+        (await options.store.getWorkspaceUsage(project.workspaceId, period)) ??
+        createEmptyUsage(project.workspaceId, period);
+      useLlmCouncil = canUseLlmCouncil({ subscription, usage });
     }
 
     const artifacts = await runPipeline(
@@ -57,6 +101,8 @@ export async function processAnalysisJob(
         analysisId,
         onStream: (event) => appendStreamEvent(analysis, event),
         incrementalBaseSnapshot,
+        incrementalBaseArtifacts,
+        useLlmCouncil,
       },
     );
 
@@ -89,7 +135,13 @@ async function recordLlmCouncilUsageIfNeeded(
   const usage =
     (await store.getWorkspaceUsage(project.workspaceId, period)) ??
     createEmptyUsage(project.workspaceId, period);
-  await store.saveWorkspaceUsage(incrementUsage(usage, "llmCouncilRuns"));
+
+  let next = incrementUsage(usage, "llmCouncilRuns");
+  const cost = analysis.artifacts.llmCouncilMeta?.estimatedCostUsd;
+  if (cost && cost > 0) {
+    next = addLlmCost(next, cost);
+  }
+  await store.saveWorkspaceUsage(next);
 }
 
 async function recordAnalysisActivity(
@@ -123,6 +175,24 @@ async function recordAnalysisActivity(
         type: "drift_alert",
         summary: `${project.name} drift alert · ${Math.round(driftScore * 100)}% change detected`,
         metadata: { driftScore },
+      }),
+    );
+  }
+
+  const savings = analysis.artifacts?.incrementalMetrics;
+  if (savings?.mode === "incremental") {
+    await store.appendCognitionActivity(
+      createActivityEvent({
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        analysisId: analysis.id,
+        type: "analysis_completed",
+        summary: `${project.name} incremental analysis saved ${savings.savingsPercent}% compute`,
+        metadata: {
+          savingsPercent: savings.savingsPercent,
+          changeRatio: savings.changeRatio,
+          meetsSavingsTarget: savings.meetsSavingsTarget,
+        },
       }),
     );
   }

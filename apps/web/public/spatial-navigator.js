@@ -30,9 +30,10 @@ function nodeColor(node) {
   return KIND_COLORS[node.kind] ?? 0xffffff;
 }
 
-export function initSpatialNavigator(container, graph, { onSelect } = {}) {
+export function initSpatialNavigator(container, graph, { onSelect, onReady } = {}) {
   if (!graph?.nodes?.length) {
     container.innerHTML = "<p class=\"muted\">No spatial graph data.</p>";
+    onReady?.(null);
     return () => undefined;
   }
 
@@ -46,6 +47,8 @@ export function initSpatialNavigator(container, graph, { onSelect } = {}) {
   let camera;
   let animationId;
   let disposed = false;
+  let nodeMeshes;
+  let selectNode;
 
   const loadThree = () =>
     new Promise((resolve, reject) => {
@@ -79,7 +82,7 @@ export function initSpatialNavigator(container, graph, { onSelect } = {}) {
       point.position.set(20, 40, 30);
       scene.add(ambient, point);
 
-      const nodeMeshes = new Map();
+      nodeMeshes = new Map();
       const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
 
       const hasDiffOverlay = graph.nodes.some((n) => n.diffState && n.diffState !== "unchanged");
@@ -134,6 +137,16 @@ export function initSpatialNavigator(container, graph, { onSelect } = {}) {
       const pointer = new THREE.Vector2();
       let selectedId = null;
 
+      selectNode = (node) => {
+        if (!node) return false;
+        selectedId = node.id;
+        for (const mesh of nodeMeshes.values()) {
+          mesh.material.emissiveIntensity = mesh.userData.id === selectedId ? 0.85 : 0.25;
+        }
+        onSelect?.(node);
+        return true;
+      };
+
       function onPointerMove(event) {
         const rect = canvas.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -145,11 +158,7 @@ export function initSpatialNavigator(container, graph, { onSelect } = {}) {
         const hits = raycaster.intersectObjects([...nodeMeshes.values()]);
         const hit = hits[0]?.object;
         if (!hit) return;
-        selectedId = hit.userData.id;
-        for (const mesh of nodeMeshes.values()) {
-          mesh.material.emissiveIntensity = mesh.userData.id === selectedId ? 0.7 : 0.25;
-        }
-        onSelect?.(hit.userData);
+        selectNode(hit.userData);
       }
 
       canvas.addEventListener("pointermove", onPointerMove);
@@ -194,9 +203,31 @@ export function initSpatialNavigator(container, graph, { onSelect } = {}) {
         canvas.removeEventListener("click", onClick);
         renderer.dispose();
       };
+
+      onReady?.({
+        focusNode(nodeId) {
+          const node = nodeById.get(nodeId);
+          return selectNode(node);
+        },
+        findFileNode(filePath) {
+          return graph.nodes.find((n) => n.kind === "file" && n.filePath === filePath);
+        },
+        findSymbolNode(filePath, line) {
+          return graph.nodes.find(
+            (n) =>
+              n.kind === "symbol" &&
+              n.filePath === filePath &&
+              (line == null || Math.abs((n.meta?.line ?? 0) - line) < 8),
+          );
+        },
+        findFindingNode(findingId) {
+          return graph.nodes.find((n) => n.kind === "finding" && n.id === `spatial:${findingId}`);
+        },
+      });
     })
     .catch((error) => {
       container.innerHTML = `<p class="muted">${error.message}</p>`;
+      onReady?.(null);
     });
 
   return () => container._spatialCleanup?.();

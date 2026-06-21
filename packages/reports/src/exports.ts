@@ -130,6 +130,17 @@ export function renderHtmlReport(report: TruthReport): string {
     )
     .join("");
 
+  const contradictionBlocks = (report.contradictionRegister ?? [])
+    .map(
+      (c) => `
+      <article class="contradiction">
+        <h3>${c.claim}</h3>
+        <p><strong>Challenge:</strong> ${c.challenge}</p>
+        <p><strong>Models:</strong> ${c.models.join(", ")} · <strong>Status:</strong> ${c.severity}</p>
+      </article>`,
+    )
+    .join("");
+
   const findingBlocks = report.findings
     .map(
       (f) => `
@@ -137,6 +148,7 @@ export function renderHtmlReport(report: TruthReport): string {
         <h3>${f.title}</h3>
         <p><strong>Severity:</strong> ${f.severity} · <strong>Confidence:</strong> ${f.confidence} · <strong>Domain:</strong> ${f.domain}</p>
         <p>${f.description}</p>
+        ${f.evidence?.length ? `<p><strong>Evidence:</strong> ${f.evidence.map((e) => `${e.filePath}${e.lineStart ? `:${e.lineStart}` : ""}`).join(", ")}</p>` : ""}
         ${f.remediationPath ? `<p><em>Remediation:</em> ${f.remediationPath}</p>` : ""}
       </article>`,
     )
@@ -161,6 +173,7 @@ export function renderHtmlReport(report: TruthReport): string {
     table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
     th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
     .finding { margin: 1.5rem 0; padding: 1rem; border-left: 4px solid #333; background: #f8f8f8; }
+    .contradiction { margin: 1.5rem 0; padding: 1rem; border-left: 4px solid #b45309; background: #fff7ed; }
     @media print { body { margin: 1cm; } .finding { break-inside: avoid; } }
   </style>
 </head>
@@ -172,6 +185,9 @@ export function renderHtmlReport(report: TruthReport): string {
   <p>${report.executiveSummary}</p>
   <h2>Domain Scorecard</h2>
   <table><thead><tr><th>Domain</th><th>Score</th><th>Confidence</th><th>Rationale</th></tr></thead><tbody>${domainRows}</tbody></table>
+  <h2>Contradiction Register</h2>
+  <p><em>Disagreements are never hidden. Unresolved council conflicts appear here first.</em></p>
+  ${contradictionBlocks || "<p>No unresolved contradictions recorded.</p>"}
   <h2>Priority Findings</h2>
   ${findingBlocks}
   <h2>Planning Roadmap</h2>

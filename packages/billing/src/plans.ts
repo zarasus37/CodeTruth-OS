@@ -6,6 +6,8 @@ export interface PlanLimits {
   filesPerProject: number;
   analysesPerMonth: number;
   llmCouncilRunsPerMonth: number;
+  /** Estimated monthly LLM spend cap (USD) for Truth Council. */
+  llmCostCapUsdPerMonth: number;
   seatsIncluded: number;
   maxSeats: number;
 }
@@ -45,6 +47,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       filesPerProject: 500,
       analysesPerMonth: 3,
       llmCouncilRunsPerMonth: 0,
+      llmCostCapUsdPerMonth: 0,
       seatsIncluded: 1,
       maxSeats: 1,
     },
@@ -67,6 +70,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       filesPerProject: 5_000,
       analysesPerMonth: 30,
       llmCouncilRunsPerMonth: 15,
+      llmCostCapUsdPerMonth: 5,
       seatsIncluded: 1,
       maxSeats: 3,
     },
@@ -97,6 +101,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       filesPerProject: 20_000,
       analysesPerMonth: 150,
       llmCouncilRunsPerMonth: 75,
+      llmCostCapUsdPerMonth: 25,
       seatsIncluded: 5,
       maxSeats: 50,
     },
@@ -129,6 +134,7 @@ export const PLAN_CATALOG: Record<SubscriptionPlan, PlanDefinition> = {
       filesPerProject: 100_000,
       analysesPerMonth: 999,
       llmCouncilRunsPerMonth: 999,
+      llmCostCapUsdPerMonth: 999,
       seatsIncluded: 25,
       maxSeats: 999,
     },

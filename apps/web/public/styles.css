@@ -54,8 +54,60 @@
   background: rgba(45, 212, 191, 0.08);
 }
 
+.evidence-ledger-panel {
+  margin-bottom: 16px;
+  border: 1px solid rgba(79, 140, 255, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: rgba(79, 140, 255, 0.06);
+}
+
+.evidence-ledger-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ledger-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.ledger-step.active {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.2);
+}
+
+.ledger-separator {
+  color: var(--muted);
+}
+
+.evidence-ledger-snippet {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 .contradictions-panel {
   margin-bottom: 16px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: rgba(251, 191, 36, 0.06);
 }
 
 .contradiction-card {
@@ -63,6 +115,16 @@
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   margin-bottom: 10px;
+  border-left: 3px solid #fbbf24;
+}
+
+.contradiction-card.unresolved strong {
+  color: #fbbf24;
+}
+
+.contradiction-empty {
+  font-style: italic;
+  color: var(--muted);
 }
 
 .evidence-list {

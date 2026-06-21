@@ -117,6 +117,24 @@ export function assertLlmCouncilAllowed(ctx: GateContext): void {
       plan === "pro" ? "team" : "enterprise",
     );
   }
+
+  const spent = ctx.usage.llmCostUsd ?? 0;
+  if (limits.llmCostCapUsdPerMonth > 0 && spent >= limits.llmCostCapUsdPerMonth) {
+    throw new BillingGateError(
+      `Monthly LLM cost cap reached ($${limits.llmCostCapUsdPerMonth})`,
+      "llm_cost_cap_exceeded",
+      plan === "pro" ? "team" : "enterprise",
+    );
+  }
+}
+
+export function canUseLlmCouncil(ctx: GateContext): boolean {
+  try {
+    assertLlmCouncilAllowed(ctx);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function assertSeatInviteAllowed(ctx: GateContext): void {

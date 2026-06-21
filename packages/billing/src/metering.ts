@@ -13,6 +13,7 @@ export function createEmptyUsage(workspaceId: string, period = currentUsagePerio
     analysesCount: 0,
     llmCouncilRuns: 0,
     projectsCreated: 0,
+    llmCostUsd: 0,
   };
 }
 
@@ -24,5 +25,12 @@ export function incrementUsage(
   return {
     ...usage,
     [field]: usage[field] + amount,
+  };
+}
+
+export function addLlmCost(usage: WorkspaceUsage, costUsd: number): WorkspaceUsage {
+  return {
+    ...usage,
+    llmCostUsd: Math.round(((usage.llmCostUsd ?? 0) + costUsd) * 10000) / 10000,
   };
 }

@@ -7,6 +7,7 @@ import {
   assertProjectCreateAllowed,
   assertSeatInviteAllowed,
   BillingGateError,
+  canUseLlmCouncil,
   createEmptyUsage,
   currentUsagePeriod,
   defaultSubscription,
@@ -205,11 +206,6 @@ export async function getBillingSummary(workspaceId: string) {
 }
 
 export async function shouldUseLlmCouncil(workspaceId: string): Promise<boolean> {
-  try {
-    const ctx = await buildGateContext(workspaceId);
-    assertLlmCouncilAllowed(ctx);
-    return true;
-  } catch {
-    return false;
-  }
+  const ctx = await buildGateContext(workspaceId);
+  return canUseLlmCouncil(ctx);
 }

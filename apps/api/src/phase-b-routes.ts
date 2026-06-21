@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createId, type ActivationSurveyResponse, type OnboardingStep } from "@codetruth/core";
-import { computeBetaMetrics, PHASE_B_GATES } from "@codetruth/telemetry";
+import { computeBetaMetrics, computePhaseCMetrics, PHASE_B_GATES, PHASE_C_GATES } from "@codetruth/telemetry";
 import { authenticate } from "./auth.js";
 import { BetaAccessError, ensureDefaultBetaInvite, redeemBetaInvite } from "./beta-service.js";
 import { store } from "./context.js";
@@ -168,13 +168,17 @@ export async function registerPhaseBRoutes(app: FastifyInstance): Promise<void> 
       betaRedemptions,
     });
 
+    const phaseC = computePhaseCMetrics({ analyses, events });
+
     return {
       metrics,
+      phaseC,
       targets: {
         activationRate: PHASE_B_GATES.activationRate,
         habitFormationRate: PHASE_B_GATES.habitFormationRate,
         activationMomentRate: 0.7,
         medianMinutesToFirstInsight: 12,
+        incrementalSavingsPercent: PHASE_C_GATES.incrementalSavingsPercent,
       },
       generatedAt: new Date().toISOString(),
     };

@@ -44,12 +44,16 @@ function parseFile(filePath: string, content: string): {
   }
 }
 
-export async function parseSnapshot(snapshot: SnapshotRecord): Promise<ParseResult> {
+export async function parseSnapshotPaths(
+  snapshot: SnapshotRecord,
+  paths: Set<string>,
+): Promise<ParseResult> {
   const symbols: SymbolRecord[] = [];
   const dependencies: DependencyEdge[] = [];
   const parserStats = emptyParserStats();
 
   for (const entry of snapshot.manifest) {
+    if (!paths.has(entry.path)) continue;
     if (!isSourceFile(entry.path)) continue;
     const fullPath = path.join(snapshot.rootPath, entry.path);
     let content = "";
@@ -77,4 +81,13 @@ export async function parseSnapshot(snapshot: SnapshotRecord): Promise<ParseResu
   }
 
   return { symbols, dependencies, parserStats };
+}
+
+export async function parseSnapshot(snapshot: SnapshotRecord): Promise<ParseResult> {
+  const paths = new Set(snapshot.manifest.map((entry) => entry.path));
+  return parseSnapshotPaths(snapshot, paths);
+}
+
+export function countSourceFiles(snapshot: SnapshotRecord): number {
+  return snapshot.manifest.filter((entry) => isSourceFile(entry.path)).length;
 }

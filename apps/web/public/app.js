@@ -14,6 +14,9 @@ const state = {
   report: null,
   pendingUpgrade: null,
   billingPlans: null,
+  spatialGraph: null,
+  spatialNavigator: null,
+  trackedIncrementalTelemetry: new Set(),
 };
 
 const loginPanel = document.getElementById("login-panel");
@@ -23,6 +26,9 @@ const activationPanel = document.getElementById("activation-panel");
 const upgradePanel = document.getElementById("upgrade-panel");
 const activationMomentPanel = document.getElementById("activation-moment-panel");
 const contradictionsPanel = document.getElementById("contradictions-panel");
+const evidenceLedgerPanel = document.getElementById("evidence-ledger-panel");
+const evidenceLedgerTrail = document.getElementById("evidence-ledger-trail");
+const evidenceLedgerSnippet = document.getElementById("evidence-ledger-snippet");
 const appPanel = document.getElementById("app-panel");
 const userChip = document.getElementById("user-chip");
 const workspaceSelect = document.getElementById("workspace-select");
@@ -344,36 +350,126 @@ function renderActivationMoment(report) {
 }
 
 function renderContradictions(report) {
-  const contradictions = [
-    ...(report?.consensus?.contradictions ?? []),
-    ...(report?.councilPhases?.flatMap((phase) =>
-      (phase.contradictions ?? []).map((c) => `${c.claim} ↔ ${c.challenge}`),
-    ) ?? []),
-  ].filter(Boolean);
+  const register = report?.contradictionRegister ?? [];
+  const listEl = document.getElementById("contradictions-list");
 
-  if (!contradictions.length) {
-    contradictionsPanel.classList.add("hidden");
+  if (!register.length) {
+    listEl.innerHTML =
+      '<p class="contradiction-empty">No unresolved contradictions on this snapshot. Council assessments aligned.</p>';
     return;
   }
 
-  document.getElementById("contradictions-list").innerHTML = contradictions
+  listEl.innerHTML = register
     .map(
-      (text, index) => `
-      <article class="contradiction-card" data-contradiction-index="${index}">
-        <p>${text}</p>
+      (record, index) => `
+      <article class="contradiction-card ${record.severity}" data-contradiction-index="${index}" data-contradiction-id="${record.id}">
+        <p><strong>${record.claim}</strong></p>
+        <p class="muted">Challenge: ${record.challenge}</p>
+        <p class="muted">Models: ${record.models.join(", ")} · ${record.severity}</p>
       </article>`,
     )
     .join("");
 
-  contradictionsPanel.classList.remove("hidden");
-  contradictionsPanel.querySelectorAll(".contradiction-card").forEach((card) => {
+  listEl.querySelectorAll(".contradiction-card").forEach((card) => {
     card.addEventListener("click", () => {
       trackTelemetry("contradiction.viewed", {
         index: Number(card.dataset.contradictionIndex),
+        contradictionId: card.dataset.contradictionId,
         analysisId: state.analysisId,
       });
     });
   });
+}
+
+function resolveEvidenceChain(finding, evidence) {
+  const graph = state.spatialGraph;
+  const nav = state.spatialNavigator;
+  const filePath = evidence.filePath;
+  const fileNode = nav?.findFileNode?.(filePath) ?? graph?.nodes?.find((n) => n.kind === "file" && n.filePath === filePath);
+  const symbolNode =
+    nav?.findSymbolNode?.(filePath, evidence.lineStart) ??
+    graph?.nodes?.find(
+      (n) =>
+        n.kind === "symbol" &&
+        n.filePath === filePath &&
+        (evidence.lineStart == null || Math.abs((n.meta?.line ?? 0) - evidence.lineStart) < 8),
+    );
+  const findingNode =
+    nav?.findFindingNode?.(finding.id) ??
+    graph?.nodes?.find((n) => n.kind === "finding" && n.id === `spatial:${finding.id}`);
+
+  return { finding, evidence, findingNode, fileNode, symbolNode };
+}
+
+function focusSpatialNode(node) {
+  if (!node) return false;
+  spatialPanel.classList.remove("hidden");
+  spatialPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (state.spatialNavigator?.focusNode?.(node.id)) return true;
+  spatialSelection.textContent = `${node.kind}: ${node.label}${node.filePath ? ` (${node.filePath})` : ""}`;
+  return true;
+}
+
+function openEvidenceLedger(finding, evidence, evidenceIndex) {
+  const chain = resolveEvidenceChain(finding, evidence);
+  const steps = [
+    { key: "finding", label: finding.title, node: chain.findingNode },
+    {
+      key: "file",
+      label: `${evidence.filePath}${evidence.lineStart ? `:${evidence.lineStart}` : ""}`,
+      node: chain.fileNode,
+    },
+    {
+      key: "symbol",
+      label: chain.symbolNode?.label ?? "(no symbol resolved)",
+      node: chain.symbolNode,
+      disabled: !chain.symbolNode,
+    },
+  ];
+
+  evidenceLedgerTrail.innerHTML = steps
+    .map((step, index) => {
+      const sep = index > 0 ? '<span class="ledger-separator">→</span>' : "";
+      const disabled = step.disabled ? "disabled" : "";
+      return `${sep}<button type="button" class="ledger-step ${index === 1 ? "active" : ""}" data-ledger-step="${step.key}" ${disabled}>${step.label}</button>`;
+    })
+    .join("");
+
+  if (evidence.snippet) {
+    evidenceLedgerSnippet.textContent = evidence.snippet;
+    evidenceLedgerSnippet.classList.remove("hidden");
+  } else {
+    evidenceLedgerSnippet.classList.add("hidden");
+  }
+
+  evidenceLedgerPanel.classList.remove("hidden");
+  evidenceLedgerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  evidenceLedgerTrail.querySelectorAll(".ledger-step").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      evidenceLedgerTrail.querySelectorAll(".ledger-step").forEach((el) => el.classList.remove("active"));
+      btn.classList.add("active");
+      const stepKey = btn.dataset.ledgerStep;
+      const step = steps.find((s) => s.key === stepKey);
+      if (step?.node) focusSpatialNode(step.node);
+      trackTelemetry("evidence.drilldown_clicked", {
+        findingId: finding.id,
+        step: stepKey,
+        filePath: evidence.filePath,
+        analysisId: state.analysisId,
+      });
+    });
+  });
+
+  trackTelemetry("evidence.ledger_opened", {
+    findingId: finding.id,
+    evidenceIndex,
+    filePath: evidence.filePath,
+    analysisId: state.analysisId,
+  });
+
+  if (chain.fileNode) focusSpatialNode(chain.fileNode);
 }
 
 function renderEvidenceList(finding) {
@@ -439,16 +535,10 @@ function renderFindings(report) {
   findingsPanel.querySelectorAll(".evidence-link").forEach((btn) => {
     btn.addEventListener("click", () => {
       const findingId = btn.dataset.findingId;
-      const index = btn.dataset.evidenceIndex;
-      const snippet = findingsPanel.querySelector(
-        `[data-snippet-for="${findingId}-${index}"]`,
-      );
-      if (snippet) snippet.classList.toggle("hidden");
-      trackTelemetry("evidence.drilldown_clicked", {
-        findingId,
-        filePath: btn.textContent?.trim(),
-        analysisId: state.analysisId,
-      });
+      const index = Number(btn.dataset.evidenceIndex);
+      const finding = report.findings.find((f) => f.id === findingId);
+      const evidence = finding?.evidence?.[index];
+      if (finding && evidence) openEvidenceLedger(finding, evidence, index);
     });
   });
 
@@ -516,13 +606,32 @@ function renderAnalysisMeta(analysis) {
   const chips = [];
 
   if (artifacts.llmPowered) {
-    chips.push("<span class=\"meta-chip\"><strong>LLM</strong> Truth Council</span>");
+    const provider = artifacts.llmCouncilMeta?.provider;
+    chips.push(
+      `<span class="meta-chip"><strong>LLM</strong> Truth Council${provider ? ` · ${provider}` : ""}</span>`,
+    );
   } else if (artifacts.llmFallbackReason) {
     chips.push(
-      `<span class="meta-chip meta-warn" title="${artifacts.llmFallbackReason}"><strong>Heuristic</strong> council (LLM unavailable)</span>`,
+      `<span class="meta-chip meta-warn" title="${artifacts.llmFallbackReason}"><strong>Heuristic</strong> council (LLM degraded)</span>`,
     );
   } else {
     chips.push("<span class=\"meta-chip\">Heuristic Truth Council</span>");
+  }
+
+  if (artifacts.incrementalMetrics?.mode === "incremental") {
+    const m = artifacts.incrementalMetrics;
+    chips.push(
+      `<span class="meta-chip"><strong>Incremental</strong> ${m.savingsPercent}% compute saved · ${m.filesParsed}/${m.filesTotal} files parsed</span>`,
+    );
+    if (!state.trackedIncrementalTelemetry.has(analysis.id)) {
+      state.trackedIncrementalTelemetry.add(analysis.id);
+      trackTelemetry("incremental.savings", {
+        analysisId: state.analysisId,
+        savingsPercent: m.savingsPercent,
+        changeRatio: m.changeRatio,
+        meetsSavingsTarget: m.meetsSavingsTarget,
+      });
+    }
   }
 
   if (parser?.treesitter) {
@@ -547,7 +656,7 @@ function renderAnalysisMeta(analysis) {
     );
   }
 
-  if (analysis.incrementalBaseSnapshotId) {
+  if (analysis.incrementalBaseSnapshotId && !artifacts.incrementalMetrics) {
     chips.push("<span class=\"meta-chip\"><strong>Incremental</strong> vs prior snapshot</span>");
   }
 
@@ -640,7 +749,11 @@ async function loadSpatialGraphForAnalysis(analysisId) {
       spatialSelection.textContent = `Drift ${Math.round((payload.spatialGraph.diffOverlay.driftScore ?? 0) * 100)}% vs prior snapshot`;
     }
     spatialPanel.classList.remove("hidden");
+    state.spatialGraph = payload.spatialGraph;
     disposeSpatial = initSpatialNavigator(spatialCanvasWrap, payload.spatialGraph, {
+      onReady(nav) {
+        state.spatialNavigator = nav;
+      },
       onSelect(node) {
         const diff = node.diffState ? ` · ${node.diffState}` : "";
         spatialSelection.textContent = `${node.kind}: ${node.label}${diff}${node.filePath ? ` (${node.filePath})` : ""}${node.score != null ? ` · score ${node.score}` : ""}`;

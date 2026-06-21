@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertAnalysisAllowed,
   assertFeature,
+  assertLlmCouncilAllowed,
   BillingGateError,
   defaultSubscription,
   hasFeature,
@@ -38,5 +39,18 @@ describe("billing gates", () => {
     expect(() => assertAnalysisAllowed({ subscription: sub, usage }, "manual")).toThrow(
       BillingGateError,
     );
+  });
+
+  it("pro plan enforces LLM cost cap", () => {
+    const sub = {
+      ...defaultSubscription("ws_1"),
+      plan: "pro" as const,
+      status: "active" as const,
+    };
+    const usage = {
+      ...createEmptyUsage("ws_1"),
+      llmCostUsd: PLAN_CATALOG.pro.limits.llmCostCapUsdPerMonth,
+    };
+    expect(() => assertLlmCouncilAllowed({ subscription: sub, usage })).toThrow(BillingGateError);
   });
 });

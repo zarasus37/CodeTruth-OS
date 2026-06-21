@@ -248,10 +248,18 @@
           <p id="activation-moment-summary" class="muted"></p>
           <div id="activation-moment-findings" class="activation-findings"></div>
         </section>
-        <section id="contradictions-panel" class="contradictions-panel hidden">
+        <section id="evidence-ledger-panel" class="evidence-ledger-panel hidden">
           <div class="panel-head">
-            <h2>Contradiction register</h2>
-            <span class="muted">Claims the council could not reconcile</span>
+            <h2>Evidence Ledger</h2>
+            <span class="muted">Finding → file → symbol in ≤3 clicks</span>
+          </div>
+          <nav id="evidence-ledger-trail" class="evidence-ledger-trail" aria-label="Evidence chain"></nav>
+          <pre id="evidence-ledger-snippet" class="evidence-ledger-snippet hidden"></pre>
+        </section>
+        <section id="contradictions-panel" class="contradictions-panel">
+          <div class="panel-head">
+            <h2>Contradiction Register</h2>
+            <span class="muted">Disagreements are never hidden — visible before consensus summary</span>
           </div>
           <div id="contradictions-list"></div>
         </section>

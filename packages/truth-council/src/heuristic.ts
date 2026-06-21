@@ -25,6 +25,10 @@ export interface CouncilResult {
   contradictionRegister: ContradictionRecord[];
   llmPowered: boolean;
   llmFallbackReason?: string;
+  llmQuotaDegraded?: boolean;
+  llmProvider?: string;
+  llmModel?: string;
+  llmEstimatedCostUsd?: number;
 }
 
 function modelFindings(model: CouncilModel, findings: Finding[]): Finding[] {

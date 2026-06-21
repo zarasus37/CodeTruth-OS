@@ -371,6 +371,8 @@ export interface PipelineStreamEvent {
     findingCount?: number;
     consensusSummary?: string;
     taskCount?: number;
+    incrementalSavingsPercent?: number;
+    llmPowered?: boolean;
   };
 }
 
@@ -464,6 +466,27 @@ export interface CouncilPhaseResult {
   contradictions: ContradictionRecord[];
 }
 
+export interface IncrementalComputeMetrics {
+  mode: "full" | "incremental";
+  filesTotal: number;
+  filesParsed: number;
+  filesSkipped: number;
+  computeUnitsFull: number;
+  computeUnitsActual: number;
+  /** Percent compute saved vs full re-parse (0–100). */
+  savingsPercent: number;
+  changeRatio: number;
+  /** True when small diff meets Phase C 85% savings gate. */
+  meetsSavingsTarget?: boolean;
+}
+
+export interface LlmCouncilRunMeta {
+  provider?: string;
+  model?: string;
+  estimatedCostUsd?: number;
+  quotaDegraded?: boolean;
+}
+
 export interface PipelineArtifacts {
   snapshot: SnapshotRecord;
   symbols: SymbolRecord[];
@@ -474,12 +497,15 @@ export interface PipelineArtifacts {
   consensus: ConsensusTruthReport;
   roadmap: PhasedRoadmap;
   councilPhases?: CouncilPhaseResult[];
+  contradictionRegister?: ContradictionRecord[];
   modelNotes?: Record<string, string[]>;
   analyzerVersion?: string;
   parserStats?: ParserStats;
   spatialGraph?: SpatialGraph;
   llmPowered?: boolean;
   llmFallbackReason?: string;
+  llmCouncilMeta?: LlmCouncilRunMeta;
+  incrementalMetrics?: IncrementalComputeMetrics;
 }
 
 export type FindingReviewStatus = "pending" | "accepted" | "rejected" | "deferred";
@@ -612,6 +638,8 @@ export interface WorkspaceUsage {
   analysesCount: number;
   llmCouncilRuns: number;
   projectsCreated: number;
+  /** Estimated LLM spend this period (USD) for tier cost caps. */
+  llmCostUsd?: number;
 }
 
 export type ProductEventName =
@@ -631,9 +659,11 @@ export type ProductEventName =
   | "billing.upgrade_prompt_shown"
   | "feature.used"
   | "evidence.drilldown_clicked"
+  | "evidence.ledger_opened"
   | "contradiction.viewed"
   | "finding.override"
-  | "activation.moment_viewed";
+  | "activation.moment_viewed"
+  | "incremental.savings";
 
 export interface ProductEvent {
   id: string;
@@ -770,7 +800,10 @@ export interface TruthReport {
   consensus: ConsensusTruthReport;
   roadmap: PhasedRoadmap;
   councilPhases?: CouncilPhaseResult[];
+  contradictionRegister?: ContradictionRecord[];
   modelNotes?: Record<string, string[]>;
+  llmCouncilMeta?: LlmCouncilRunMeta;
+  incrementalMetrics?: IncrementalComputeMetrics;
   approval?: ReportApproval;
   reviews?: FindingReview[];
   annotations?: FindingAnnotation[];

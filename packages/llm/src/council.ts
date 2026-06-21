@@ -7,7 +7,14 @@ import type {
   CouncilPhaseResult,
   Finding,
 } from "@codetruth/core";
-import { completeChat, getCouncilModel, isLlmEnabled, type LlmMessage } from "./client.js";
+import {
+  completeChatWithMeta,
+  getCouncilModel,
+  getSessionLlmCostUsd,
+  isLlmEnabled,
+  resetSessionLlmCost,
+  type LlmMessage,
+} from "./client.js";
 
 export const COUNCIL_MODELS = [
   "Architecture Model",
@@ -38,6 +45,9 @@ export interface LlmCouncilResult {
   phases: CouncilPhaseResult[];
   contradictionRegister: ContradictionRecord[];
   llmPowered: true;
+  provider?: string;
+  model?: string;
+  estimatedCostUsd?: number;
 }
 
 function evidenceContext(
@@ -74,7 +84,11 @@ function parseBulletList(text: string): string[] {
     .slice(0, 12);
 }
 
-async function phase1(model: CouncilModel, context: string): Promise<string[]> {
+async function phase1(
+  model: CouncilModel,
+  context: string,
+  onProvider?: (provider: string, modelName: string) => void,
+): Promise<string[]> {
   const messages: LlmMessage[] = [
     { role: "system", content: MODEL_PROMPTS[model] },
     {
@@ -82,8 +96,9 @@ async function phase1(model: CouncilModel, context: string): Promise<string[]> {
       content: `Phase 1 — independent assessment. Return 4-8 bullet findings.\n\nEvidence:\n${context}`,
     },
   ];
-  const content = await completeChat(messages, { model: getCouncilModel(model) });
-  return parseBulletList(content);
+  const result = await completeChatWithMeta(messages, { model: getCouncilModel(model) });
+  onProvider?.(result.provider, result.model);
+  return parseBulletList(result.content);
 }
 
 async function phase2Challenge(
@@ -109,7 +124,10 @@ Evidence:
 ${context}`,
     },
   ];
-  const content = await completeChat(messages, { model: getCouncilModel(model), maxTokens: 1500 });
+  const { content } = await completeChatWithMeta(messages, {
+    model: getCouncilModel(model),
+    maxTokens: 1500,
+  });
   const challengeBlock = content.split(/REVISED:/i)[0] ?? content;
   const revisedBlock = content.split(/REVISED:/i)[1] ?? "";
   const challenges = parseBulletList(challengeBlock.replace(/CHALLENGES:/i, ""));
@@ -145,7 +163,7 @@ Evidence:
 ${context}`,
     },
   ];
-  const content = await completeChat(messages, {
+  const { content } = await completeChatWithMeta(messages, {
     model: process.env.LLM_MODEL_CONSENSUS ?? process.env.LLM_MODEL ?? "gpt-4o-mini",
     temperature: 0.1,
     maxTokens: 1800,
@@ -177,11 +195,23 @@ export async function runLlmTruthCouncil(
     throw new Error("LLM is not configured");
   }
 
+  resetSessionLlmCost();
+  let primaryProvider: string | undefined;
+  let primaryModel: string | undefined;
+
   const context = evidenceContext(scorecard, findings, architecture);
 
   const phase1Results = Object.fromEntries(
     await Promise.all(
-      COUNCIL_MODELS.map(async (model) => [model, await phase1(model, context)] as const),
+      COUNCIL_MODELS.map(async (model) => {
+        const notes = await phase1(model, context, (provider, modelName) => {
+          if (!primaryProvider) {
+            primaryProvider = provider;
+            primaryModel = modelName;
+          }
+        });
+        return [model, notes] as const;
+      }),
     ),
   ) as Record<CouncilModel, string[]>;
 
@@ -221,5 +251,8 @@ export async function runLlmTruthCouncil(
     phases,
     contradictionRegister,
     llmPowered: true,
+    provider: primaryProvider,
+    model: primaryModel,
+    estimatedCostUsd: getSessionLlmCostUsd(),
   };
 }

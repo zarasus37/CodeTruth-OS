@@ -1,14 +1,19 @@
-import type { AnalysisStage, PipelineArtifacts, PipelineStreamEvent } from "@codetruth/core";
+import type { AnalysisStage, IncrementalComputeMetrics, PipelineArtifacts, PipelineStreamEvent } from "@codetruth/core";
 import type { SnapshotRecord } from "@codetruth/core";
 import { evaluateProject } from "@codetruth/evaluation";
 import { diffSnapshots } from "@codetruth/ingestion";
-import { parseSnapshot } from "@codetruth/parsing";
+import { countSourceFiles, parseSnapshot, parseSnapshotPaths } from "@codetruth/parsing";
 import { buildRoadmap } from "@codetruth/planning";
 import { reconstructArchitecture } from "@codetruth/reconstruction";
 import { applySpatialDiffOverlay, buildSpatialGraph } from "@codetruth/spatial";
 import { ANALYZER_VERSION } from "@codetruth/reports";
 import { runTruthCouncil } from "@codetruth/truth-council";
 import { emitStream, type StreamCallback } from "./streaming.js";
+import {
+  changedFilePaths,
+  fullAnalysisMetrics,
+  mergeIncrementalParse,
+} from "./incremental.js";
 
 export type ProgressCallback = (
   stage: AnalysisStage,
@@ -20,6 +25,9 @@ export interface RunPipelineOptions {
   analysisId?: string;
   onStream?: StreamCallback;
   incrementalBaseSnapshot?: SnapshotRecord;
+  /** Cached artifacts from prior completed analysis (enables scoped re-parse). */
+  incrementalBaseArtifacts?: PipelineArtifacts;
+  useLlmCouncil?: boolean;
 }
 
 export async function runPipeline(
@@ -46,11 +54,65 @@ export async function runPipeline(
     await onProgress(stage, progress, event);
   };
 
+  let incrementalMetrics: IncrementalComputeMetrics | undefined;
+  let symbols;
+  let dependencies;
+  let parserStats;
+
   await report("parsing", 10);
-  const { symbols, dependencies, parserStats } = await parseSnapshot(snapshot);
+
+  const sourceFileTotal = countSourceFiles(snapshot);
+  const canIncremental =
+    options.incrementalBaseSnapshot &&
+    options.incrementalBaseArtifacts?.symbols?.length &&
+    options.incrementalBaseArtifacts.dependencies;
+
+  if (canIncremental) {
+    const manifestDiff = diffSnapshots(options.incrementalBaseSnapshot!, snapshot);
+    const changed = changedFilePaths(manifestDiff);
+    const delta = await parseSnapshotPaths(snapshot, changed);
+    const merged = mergeIncrementalParse({
+      base: {
+        symbols: options.incrementalBaseArtifacts!.symbols,
+        dependencies: options.incrementalBaseArtifacts!.dependencies,
+        parserStats: options.incrementalBaseArtifacts!.parserStats ?? {
+          total: 0,
+          skipped: 0,
+          treesitter: 0,
+          babel: 0,
+          python: 0,
+          go: 0,
+          rust: 0,
+          java: 0,
+          csharp: 0,
+          ruby: 0,
+        },
+      },
+      delta,
+      diff: diffSnapshots(options.incrementalBaseSnapshot!, snapshot, {
+        baseSymbols: options.incrementalBaseArtifacts!.symbols,
+        targetSymbols: delta.symbols,
+      }),
+      filesTotal: sourceFileTotal,
+    });
+    symbols = merged.result.symbols;
+    dependencies = merged.result.dependencies;
+    parserStats = merged.result.parserStats;
+    incrementalMetrics = merged.metrics;
+  } else {
+    const parsed = await parseSnapshot(snapshot);
+    symbols = parsed.symbols;
+    dependencies = parsed.dependencies;
+    parserStats = parsed.parserStats;
+    incrementalMetrics = options.incrementalBaseSnapshot
+      ? undefined
+      : fullAnalysisMetrics(sourceFileTotal);
+  }
+
   await report("parsing", 20, {
     symbolCount: symbols.length,
     dependencyCount: dependencies.length,
+    incrementalSavingsPercent: incrementalMetrics?.savingsPercent,
   });
 
   await report("reconstruction", 35);
@@ -72,13 +134,28 @@ export async function runPipeline(
   });
 
   if (options.incrementalBaseSnapshot) {
-    const baseParsed = await parseSnapshot(options.incrementalBaseSnapshot);
+    const baseParsed = options.incrementalBaseArtifacts
+      ? { symbols: options.incrementalBaseArtifacts.symbols }
+      : await parseSnapshot(options.incrementalBaseSnapshot);
     const diff = diffSnapshots(options.incrementalBaseSnapshot, snapshot, {
       baseSymbols: baseParsed.symbols,
       targetSymbols: symbols,
     });
     spatialGraph = applySpatialDiffOverlay(spatialGraph, diff);
+    if (!incrementalMetrics) {
+      incrementalMetrics = {
+        mode: "incremental",
+        filesTotal: sourceFileTotal,
+        filesParsed: sourceFileTotal,
+        filesSkipped: 0,
+        computeUnitsFull: sourceFileTotal,
+        computeUnitsActual: sourceFileTotal,
+        savingsPercent: 0,
+        changeRatio: diff.changeRatio,
+      };
+    }
   }
+
   await report("evaluation", 52, {
     serviceCount: architecture.services.length,
     moduleCount: architecture.modules.length,
@@ -91,10 +168,13 @@ export async function runPipeline(
   });
 
   await report("truth_council", 75);
-  const council = await runTruthCouncil(scorecard, findings, architecture);
+  const council = await runTruthCouncil(scorecard, findings, architecture, {
+    useLlm: options.useLlmCouncil,
+  });
   await report("truth_council", 85, {
     consensusSummary: council.consensus.summary.slice(0, 240),
     findingCount: findings.length,
+    llmPowered: council.llmPowered,
   });
 
   await report("planning", 90);
@@ -107,6 +187,7 @@ export async function runPipeline(
     findingCount: findings.length,
     taskCount,
     consensusSummary: council.consensus.summary.slice(0, 240),
+    incrementalSavingsPercent: incrementalMetrics?.savingsPercent,
   });
 
   return {
@@ -119,11 +200,23 @@ export async function runPipeline(
     consensus: council.consensus,
     roadmap,
     councilPhases: council.phases,
+    contradictionRegister: council.contradictionRegister,
     modelNotes: council.modelNotes,
     analyzerVersion: ANALYZER_VERSION,
     parserStats,
     spatialGraph,
     llmPowered: council.llmPowered,
     llmFallbackReason: council.llmFallbackReason,
+    llmCouncilMeta: council.llmPowered
+      ? {
+          provider: council.llmProvider,
+          model: council.llmModel,
+          estimatedCostUsd: council.llmEstimatedCostUsd,
+          quotaDegraded: council.llmQuotaDegraded,
+        }
+      : council.llmQuotaDegraded
+        ? { quotaDegraded: true }
+        : undefined,
+    incrementalMetrics,
   };
 }

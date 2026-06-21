@@ -1,3 +1,5 @@
+import { completeChatWithFailover, estimateCompletionCostUsd } from "./provider.js";
+
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -9,8 +11,24 @@ export interface LlmCompletionOptions {
   maxTokens?: number;
 }
 
+export interface LlmCompletionMeta {
+  provider: string;
+  model: string;
+  estimatedCostUsd: number;
+}
+
+let sessionCostUsd = 0;
+
+export function resetSessionLlmCost(): void {
+  sessionCostUsd = 0;
+}
+
+export function getSessionLlmCostUsd(): number {
+  return sessionCostUsd;
+}
+
 export function isLlmEnabled(): boolean {
-  return Boolean(process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY);
+  return Boolean(process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? process.env.LLM_FALLBACK_API_KEY);
 }
 
 export function getLlmConfig() {
@@ -31,32 +49,23 @@ export async function completeChat(
   messages: LlmMessage[],
   options: LlmCompletionOptions = {},
 ): Promise<string> {
-  const config = getLlmConfig();
-  if (!config.apiKey) {
-    throw new Error("LLM_API_KEY or OPENAI_API_KEY is not configured");
-  }
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: options.model ?? config.model,
-      temperature: options.temperature ?? 0.2,
-      max_tokens: options.maxTokens ?? 1200,
-      messages,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`LLM request failed (${response.status}): ${text.slice(0, 300)}`);
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return payload.choices?.[0]?.message?.content?.trim() ?? "";
+  const result = await completeChatWithMeta(messages, options);
+  return result.content;
 }
+
+export async function completeChatWithMeta(
+  messages: LlmMessage[],
+  options: LlmCompletionOptions = {},
+): Promise<LlmCompletionMeta & { content: string }> {
+  const maxTokens = options.maxTokens ?? 1200;
+  const result = await completeChatWithFailover(messages, options);
+  sessionCostUsd += result.estimatedCostUsd;
+  return {
+    content: result.content,
+    provider: result.provider,
+    model: result.model,
+    estimatedCostUsd: result.estimatedCostUsd,
+  };
+}
+
+export { estimateCompletionCostUsd };
