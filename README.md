@@ -158,6 +158,18 @@ Spatial Navigator, snapshot diff, expanded language parsers, multi-LLM Truth Cou
 
 See prior V1/V2 endpoints in git history; core analysis, collaboration, and export routes are unchanged.
 
+## SaaS roadmap (Phases A–E)
+
+| Phase | Doc | Highlights |
+|-------|-----|------------|
+| A | [docs/phase-a.md](docs/phase-a.md) | OAuth, Stripe, feature gates, metering |
+| B | [docs/phase-b.md](docs/phase-b.md) | Telemetry, closed beta, onboarding, activation survey |
+| C | [docs/phase-c.md](docs/phase-c.md) | LLM failover, evidence ledger, incremental parse |
+| D | [docs/phase-d.md](docs/phase-d.md) | Quality gate, seat billing, GitHub App production |
+| E | [docs/phase-e.md](docs/phase-e.md) | Entra/Okta SSO, data residency, marketplace analyzers, sovereign playbook |
+
+**Production:** [docs/production.md](docs/production.md) · `npm run verify:integrations` · `GET /admin/readiness`
+
 ## Planning docs
 
 The `CodeTruth/` folder contains the original work model, architecture synthesis, and product thesis documents that informed V3.

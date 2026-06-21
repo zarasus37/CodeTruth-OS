@@ -60,6 +60,10 @@ export async function findOrCreateUser(
   displayName: string,
 ): Promise<User> {
   const normalizedEmail = email.trim().toLowerCase();
+  const { assertConsumerOAuthAllowed } = await import("@codetruth/sovereign");
+  const workspaces = await store.listWorkspaces();
+  assertConsumerOAuthAllowed(normalizedEmail, workspaces);
+
   const existing = await store.getUserByEmail(normalizedEmail);
   if (existing) return existing;
 

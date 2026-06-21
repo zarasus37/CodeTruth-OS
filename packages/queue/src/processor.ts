@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { AnalysisJob, PipelineStreamEvent, SnapshotRecord } from "@codetruth/core";
+import { createId, type AnalysisJob, type PipelineStreamEvent, type SnapshotRecord } from "@codetruth/core";
 import {
   addLlmCost,
   canUseLlmCouncil,
@@ -120,6 +120,7 @@ export async function processAnalysisJob(
     analysis.completedAt = new Date().toISOString();
     analysis.artifacts = artifacts;
     await options.store.saveAnalysis(analysis);
+    await recordMarketplaceRuns(analysis, options.store);
     await recordAnalysisActivity(analysis, options.store, "analysis_completed");
     await recordLlmCouncilUsageIfNeeded(analysis, options.store);
     return analysis;
@@ -129,6 +130,34 @@ export async function processAnalysisJob(
     await options.store.saveAnalysis(analysis);
     await recordAnalysisActivity(analysis, options.store, "analysis_failed");
     throw error;
+  }
+}
+
+async function recordMarketplaceRuns(
+  analysis: AnalysisJob,
+  store: ProcessorOptions["store"],
+): Promise<void> {
+  const runs = analysis.artifacts?.marketplaceResults;
+  if (!runs?.length) return;
+
+  const project = await store.getProject(analysis.projectId);
+  if (!project) return;
+
+  for (const run of runs) {
+    await store.appendProductEvent({
+      id: createId("evt"),
+      event: "marketplace.analyzer_run",
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      analysisId: analysis.id,
+      properties: {
+        analyzerId: run.analyzerId,
+        category: run.category,
+        findingCount: run.findings.length,
+        durationMs: run.durationMs,
+      },
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 

@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { DataResidencyRegion, SsoProvider, WorkspaceSettings } from "@codetruth/core";
-import { defaultDataResidency } from "@codetruth/sovereign";
+import {
+  assertDataResidencyCompliance,
+  auditResidencyMetadata,
+  DataResidencyError,
+  defaultDataResidency,
+  residencyPolicyStatus,
+} from "@codetruth/sovereign";
 import { authenticate } from "./auth.js";
 import { enforceFeatureGate } from "./billing-service.js";
 import { store } from "./context.js";
@@ -24,7 +30,15 @@ function mergeSettings(
   return {
     ...current,
     dataResidency: body.dataResidency ?? current?.dataResidency ?? defaultDataResidency(),
-    sso: body.sso ? { ...current?.sso, ...body.sso } : current?.sso,
+    sso: body.sso
+      ? {
+          provider: body.sso.provider ?? current?.sso?.provider ?? "entra",
+          enabled: body.sso.enabled ?? current?.sso?.enabled ?? false,
+          allowedEmailDomains:
+            body.sso.allowedEmailDomains ?? current?.sso?.allowedEmailDomains,
+          enforceDomainSso: body.sso.enforceDomainSso ?? current?.sso?.enforceDomainSso,
+        }
+      : current?.sso,
     enabledMarketplaceAnalyzers:
       body.enabledMarketplaceAnalyzers ?? current?.enabledMarketplaceAnalyzers,
   };
@@ -51,6 +65,7 @@ export async function registerEnterpriseRoutes(app: FastifyInstance): Promise<vo
       return {
         workspaceId: workspace.id,
         settings,
+        residency: residencyPolicyStatus(workspace),
         ssoProviders: {
           entra: isEntraOAuthEnabled(),
           okta: isOktaOAuthEnabled(),
@@ -100,6 +115,16 @@ export async function registerEnterpriseRoutes(app: FastifyInstance): Promise<vo
       }
 
       workspace.settings = mergeSettings(workspace.settings, request.body ?? {});
+
+      try {
+        assertDataResidencyCompliance(workspace);
+      } catch (error) {
+        if (error instanceof DataResidencyError) {
+          return reply.code(422).send({ error: error.message, code: error.code });
+        }
+        throw error;
+      }
+
       await store.saveWorkspace(workspace);
 
       await recordAudit({
@@ -111,6 +136,7 @@ export async function registerEnterpriseRoutes(app: FastifyInstance): Promise<vo
         metadata: {
           dataResidency: workspace.settings.dataResidency,
           ssoEnabled: workspace.settings.sso?.enabled,
+          ...auditResidencyMetadata(workspace),
         },
       });
 
@@ -150,14 +176,14 @@ export async function registerEnterpriseRoutes(app: FastifyInstance): Promise<vo
         if (!isEntraOAuthEnabled()) {
           return reply.code(503).send({ error: "Entra SSO is not configured" });
         }
-        const state = signOAuthState("entra");
+        const state = signOAuthState("entra", workspace.id);
         return { provider, url: entraAuthorizeUrl(state) };
       }
       if (provider === "okta") {
         if (!isOktaOAuthEnabled()) {
           return reply.code(503).send({ error: "Okta SSO is not configured" });
         }
-        const state = signOAuthState("okta");
+        const state = signOAuthState("okta", workspace.id);
         return { provider, url: oktaAuthorizeUrl(state) };
       }
 

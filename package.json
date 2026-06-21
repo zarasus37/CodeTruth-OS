@@ -23,6 +23,8 @@
     "setup:env": "node scripts/setup-env.mjs",
     "dev:full": "node scripts/dev-full.mjs",
     "verify:integrations": "node scripts/verify-integrations.mjs",
+    "prod:up": "docker compose -f docker-compose.prod.yml up -d",
+    "prod:down": "docker compose -f docker-compose.prod.yml down",
     "demo": "node scripts/demo.mjs",
     "demo:v3": "node scripts/v3-demo.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"

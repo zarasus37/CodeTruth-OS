@@ -30,7 +30,12 @@ import {
 } from "./billing-service.js";
 import { registerBillingRoutes } from "./billing-routes.js";
 import { authenticate, findOrCreateUser, refreshUserToken } from "./auth.js";
-import { isDevEmailLoginEnabled } from "./oauth.js";
+import { deploymentRegion } from "@codetruth/sovereign";
+import {
+  isDevEmailLoginEnabled,
+  isEntraOAuthEnabled,
+  isOktaOAuthEnabled,
+} from "./oauth.js";
 import { registerOAuthRoutes } from "./oauth-routes.js";
 import { registerPhaseBRoutes } from "./phase-b-routes.js";
 import {
@@ -43,6 +48,7 @@ import { registerCollaborationRoutes } from "./collaboration-routes.js";
 import { dataRoot, snapshotRoot, storageBackend, store, uploadRoot, webRoot } from "./context.js";
 import { registerGitHubRoutes } from "./github-routes.js";
 import { registerIntegrationsRoutes } from "./integrations-routes.js";
+import { registerAdminRoutes } from "./admin-routes.js";
 import { registerEnterpriseRoutes } from "./enterprise-routes.js";
 import { registerMarketplaceRoutes } from "./marketplace-routes.js";
 import { registerQualityGateRoutes } from "./quality-gate-routes.js";
@@ -146,12 +152,23 @@ async function bootstrap() {
       "onboarding-flow",
       isGitHubAppEnabled() ? "github-app" : "github-pat",
       isLlmEnabled() ? "llm-truth-council" : "heuristic-truth-council",
+      "enterprise-sso",
+      "data-residency-policy",
+      "marketplace-analyzers",
+      "sovereign-services",
     ],
+    enterprise: {
+      deploymentRegion: deploymentRegion(),
+      enforceDataResidency: process.env.ENFORCE_DATA_RESIDENCY === "true",
+      sso: { entra: isEntraOAuthEnabled(), okta: isOktaOAuthEnabled() },
+    },
     billing: {
       stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
       oauth: {
         github: Boolean(process.env.GITHUB_OAUTH_CLIENT_ID),
         google: Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID),
+        entra: isEntraOAuthEnabled(),
+        okta: isOktaOAuthEnabled(),
         devEmail: isDevEmailLoginEnabled(),
       },
     },
@@ -598,6 +615,7 @@ async function bootstrap() {
   await registerCognitionRoutes(app);
   await registerGitHubRoutes(app);
   await registerQualityGateRoutes(app);
+  await registerAdminRoutes(app);
   await registerEnterpriseRoutes(app);
   await registerMarketplaceRoutes(app);
   await registerSovereignRoutes(app);

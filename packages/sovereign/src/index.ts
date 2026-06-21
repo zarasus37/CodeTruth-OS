@@ -14,6 +14,8 @@ export const DUE_DILIGENCE_STAGES: DueDiligenceStage[] = [
   "closed",
 ];
 
+export * from "./policy.js";
+
 export function defaultDataResidency(): WorkspaceSettings["dataResidency"] {
   const raw = process.env.DEFAULT_DATA_RESIDENCY?.toLowerCase();
   if (raw === "eu" || raw === "apac" || raw === "sovereign" || raw === "us") return raw;

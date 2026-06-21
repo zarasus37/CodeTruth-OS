@@ -958,6 +958,15 @@ async function loadEnterprisePanels() {
       document.getElementById("enterprise-sso-enabled").checked = Boolean(enterprise.settings?.sso?.enabled);
       document.getElementById("enterprise-sso-provider").value =
         enterprise.settings?.sso?.provider ?? "entra";
+      document.getElementById("enterprise-sso-domains").value =
+        (enterprise.settings?.sso?.allowedEmailDomains ?? []).join(", ");
+      document.getElementById("enterprise-sso-enforce").checked = Boolean(
+        enterprise.settings?.sso?.enforceDomainSso,
+      );
+      if (enterprise.residency) {
+        document.getElementById("enterprise-residency").textContent =
+          `Data residency: ${enterprise.residency.workspaceRegion} · deployment: ${enterprise.residency.deploymentRegion} · ${enterprise.residency.compliant ? "compliant" : "non-compliant"}`;
+      }
       const ssoBtn = document.getElementById("enterprise-sso-login-btn");
       ssoBtn.classList.toggle("hidden", !enterprise.settings?.sso?.enabled);
     } else {
@@ -1540,6 +1549,12 @@ document.getElementById("enterprise-save-btn").addEventListener("click", async (
         sso: {
           enabled: document.getElementById("enterprise-sso-enabled").checked,
           provider: document.getElementById("enterprise-sso-provider").value,
+          allowedEmailDomains: document
+            .getElementById("enterprise-sso-domains")
+            .value.split(",")
+            .map((d) => d.trim())
+            .filter(Boolean),
+          enforceDomainSso: document.getElementById("enterprise-sso-enforce").checked,
         },
       }),
     });

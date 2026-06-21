@@ -142,14 +142,79 @@ function printResult(name, result) {
   console.log(`${icon} ${name}: ${typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail)}`);
 }
 
+function checkStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return { ok: false, detail: "STRIPE_SECRET_KEY missing — billing disabled" };
+  const prices = [
+    process.env.STRIPE_PRICE_PRO_MONTHLY,
+    process.env.STRIPE_PRICE_TEAM_MONTHLY,
+  ].filter(Boolean);
+  return {
+    ok: true,
+    detail: `configured (${prices.length} price id(s) set; enterprise is admin-assigned)`,
+  };
+}
+
+function checkSessionSecret() {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    return {
+      ok: process.env.NODE_ENV !== "production",
+      detail: "SESSION_SECRET missing — required in production",
+    };
+  }
+  return { ok: secret.length >= 32, detail: secret.length >= 32 ? "ok" : "use 32+ characters" };
+}
+
+function checkDatabase() {
+  if (!process.env.DATABASE_URL) {
+    return { ok: true, detail: "not set — using JSON store (dev only)" };
+  }
+  return { ok: true, detail: "DATABASE_URL configured" };
+}
+
+function checkEnterpriseSso() {
+  const entra = Boolean(
+    process.env.ENTRA_TENANT_ID && process.env.ENTRA_CLIENT_ID && process.env.ENTRA_CLIENT_SECRET,
+  );
+  const okta = Boolean(
+    process.env.OKTA_ISSUER && process.env.OKTA_CLIENT_ID && process.env.OKTA_CLIENT_SECRET,
+  );
+  if (!entra && !okta) {
+    return { ok: true, detail: "not configured (optional until Enterprise SSO needed)" };
+  }
+  return { ok: true, detail: `entra=${entra}, okta=${okta}` };
+}
+
+function checkResidency() {
+  const deploy = process.env.DEPLOYMENT_REGION ?? "us (default)";
+  const enforce = process.env.ENFORCE_DATA_RESIDENCY === "true";
+  return {
+    ok: true,
+    detail: `deployment=${deploy}, enforce=${enforce}, default=${process.env.DEFAULT_DATA_RESIDENCY ?? "us"}`,
+  };
+}
+
+function checkAdminToken() {
+  const token = process.env.ADMIN_TOKEN ?? process.env.BETA_ADMIN_TOKEN;
+  if (!token) return { ok: false, detail: "ADMIN_TOKEN or BETA_ADMIN_TOKEN missing" };
+  return { ok: true, detail: "admin token configured" };
+}
+
 async function main() {
   await loadDotEnv();
 
   console.log("CodeTruth OS integration check\n");
 
+  printResult("Session secret", checkSessionSecret());
+  printResult("Database", checkDatabase());
+  printResult("Stripe billing", checkStripe());
+  printResult("Admin token", checkAdminToken());
   printResult("Redis (async queue + SSE pub/sub)", await checkRedis());
   printResult("PUBLIC_API_URL (webhooks + CI)", await checkPublicApiUrl());
   printResult("GitHub App (JWT + webhooks)", await checkGitHubApp());
+  printResult("Enterprise SSO (Entra/Okta)", checkEnterpriseSso());
+  printResult("Data residency policy", checkResidency());
   printResult("LLM Truth Council", await checkLlm());
   printResult("API /health", await checkApiHealth());
 }

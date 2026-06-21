@@ -15,6 +15,7 @@ import {
   incrementUsage,
   resolveActivePlan,
 } from "@codetruth/billing";
+import { assertDataResidencyCompliance, DataResidencyError } from "@codetruth/sovereign";
 import type { FastifyReply } from "fastify";
 import { store } from "./context.js";
 import { trackEvent } from "./telemetry-service.js";
@@ -107,12 +108,34 @@ export async function enforceAnalysisGate(
   reply: FastifyReply,
 ): Promise<boolean> {
   try {
+    if (!(await enforceResidencyGate(workspaceId, reply))) return false;
     const ctx = await buildGateContext(workspaceId);
     assertAnalysisAllowed(ctx, triggeredBy);
     return true;
   } catch (error) {
     if (error instanceof BillingGateError) {
       sendBillingError(reply, error);
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function enforceResidencyGate(
+  workspaceId: string,
+  reply: FastifyReply,
+): Promise<boolean> {
+  const workspace = await store.getWorkspace(workspaceId);
+  if (!workspace) {
+    reply.code(404).send({ error: "Workspace not found" });
+    return false;
+  }
+  try {
+    assertDataResidencyCompliance(workspace);
+    return true;
+  } catch (error) {
+    if (error instanceof DataResidencyError) {
+      reply.code(422).send({ error: error.message, code: error.code });
       return false;
     }
     throw error;

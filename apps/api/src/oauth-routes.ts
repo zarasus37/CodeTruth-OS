@@ -8,6 +8,7 @@ import {
   handleGitHubCallback,
   handleGoogleCallback,
   handleOktaCallback,
+  SsoPolicyError,
   isDevEmailLoginEnabled,
   isEntraOAuthEnabled,
   isGitHubOAuthEnabled,
@@ -16,6 +17,7 @@ import {
   issueAuthResponse,
   oktaAuthorizeUrl,
   parseSessionCookie,
+  parseOAuthState,
   signOAuthState,
   verifyOAuthState,
 } from "./oauth.js";
@@ -53,8 +55,10 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
         const payload = await issueAuthResponse(user, reply);
         return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
       } catch (error) {
-        return reply.code(500).send({
+        const status = error instanceof SsoPolicyError ? 403 : 500;
+        return reply.code(status).send({
           error: error instanceof Error ? error.message : "GitHub OAuth failed",
+          code: error instanceof SsoPolicyError ? error.code : undefined,
         });
       }
     },
@@ -82,8 +86,10 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
         const payload = await issueAuthResponse(user, reply);
         return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
       } catch (error) {
-        return reply.code(500).send({
+        const status = error instanceof SsoPolicyError ? 403 : 500;
+        return reply.code(status).send({
           error: error instanceof Error ? error.message : "Google OAuth failed",
+          code: error instanceof SsoPolicyError ? error.code : undefined,
         });
       }
     },
@@ -102,17 +108,20 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const code = request.query.code;
       const state = request.query.state;
-      if (!code || !state || !verifyOAuthState(state, "entra")) {
+      const parsed = state ? parseOAuthState(state, "entra") : undefined;
+      if (!code || !state || !parsed) {
         return reply.code(400).send({ error: "Invalid Entra OAuth callback" });
       }
 
       try {
-        const user = await handleEntraCallback(code);
+        const user = await handleEntraCallback(code, parsed.workspaceId);
         const payload = await issueAuthResponse(user, reply);
         return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
       } catch (error) {
-        return reply.code(500).send({
+        const status = error instanceof SsoPolicyError ? 403 : 500;
+        return reply.code(status).send({
           error: error instanceof Error ? error.message : "Entra OAuth failed",
+          code: error instanceof SsoPolicyError ? error.code : undefined,
         });
       }
     },
@@ -131,17 +140,20 @@ export async function registerOAuthRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const code = request.query.code;
       const state = request.query.state;
-      if (!code || !state || !verifyOAuthState(state, "okta")) {
+      const parsed = state ? parseOAuthState(state, "okta") : undefined;
+      if (!code || !state || !parsed) {
         return reply.code(400).send({ error: "Invalid Okta OAuth callback" });
       }
 
       try {
-        const user = await handleOktaCallback(code);
+        const user = await handleOktaCallback(code, parsed.workspaceId);
         const payload = await issueAuthResponse(user, reply);
         return reply.redirect(`/?auth=success&token=${encodeURIComponent(payload.token)}`);
       } catch (error) {
-        return reply.code(500).send({
+        const status = error instanceof SsoPolicyError ? 403 : 500;
+        return reply.code(status).send({
           error: error instanceof Error ? error.message : "Okta OAuth failed",
+          code: error instanceof SsoPolicyError ? error.code : undefined,
         });
       }
     },

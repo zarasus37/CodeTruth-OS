@@ -745,6 +745,7 @@ export type ProductEventName =
   | "incremental.savings"
   | "enterprise.settings_updated"
   | "marketplace.analyzer_enabled"
+  | "marketplace.analyzer_run"
   | "sovereign.engagement_created"
   | "sovereign.playbook_exported";
 

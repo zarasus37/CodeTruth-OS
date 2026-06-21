@@ -131,6 +131,14 @@
               <option value="entra">Microsoft Entra</option>
               <option value="okta">Okta</option>
             </select>
+            <label>
+              SSO email domains (comma-separated)
+              <input type="text" id="enterprise-sso-domains" placeholder="acme.com, acme.io" />
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="enterprise-sso-enforce" />
+              Enforce SSO for listed domains
+            </label>
             <button id="enterprise-save-btn" type="button" class="ghost">Save enterprise settings</button>
             <button id="enterprise-sso-login-btn" type="button" class="ghost hidden">Workspace SSO login</button>
           </div>

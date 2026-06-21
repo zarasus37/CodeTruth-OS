@@ -2,8 +2,27 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { createId } from "@codetruth/core";
 import type { User } from "@codetruth/core";
+import {
+  assertConsumerOAuthAllowed,
+  assertSsoProviderEmailAllowed,
+  SsoPolicyError,
+} from "@codetruth/sovereign";
 import { createApiToken } from "./auth.js";
 import { store } from "./context.js";
+
+async function applyConsumerAuthPolicy(email: string): Promise<void> {
+  const workspaces = await store.listWorkspaces();
+  assertConsumerOAuthAllowed(email, workspaces);
+}
+
+async function applySsoAuthPolicy(
+  email: string,
+  provider: "entra" | "okta",
+  workspaceId?: string,
+): Promise<void> {
+  const workspaces = await store.listWorkspaces();
+  assertSsoProviderEmailAllowed(email, provider, workspaces, workspaceId);
+}
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -22,28 +41,56 @@ function isProduction(): boolean {
 
 type OAuthProvider = "github" | "google" | "entra" | "okta";
 
-export function signOAuthState(provider: OAuthProvider): string {
-  const nonce = randomBytes(16).toString("hex");
-  const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
-  const payload = `${provider}:${nonce}:${expiresAt}`;
+export interface ParsedOAuthState {
+  provider: OAuthProvider;
+  expiresAt: number;
+  workspaceId?: string;
+}
+
+function signPayload(payload: string): string {
   const sig = createHmac("sha256", sessionSecret()).update(payload).digest("hex");
   return Buffer.from(`${payload}:${sig}`).toString("base64url");
 }
 
-export function verifyOAuthState(state: string, provider: OAuthProvider): boolean {
+export function signOAuthState(provider: OAuthProvider, workspaceId?: string): string {
+  const nonce = randomBytes(16).toString("hex");
+  const expiresAt = Date.now() + OAUTH_STATE_TTL_MS;
+  const payload = workspaceId
+    ? `${provider}:${nonce}:${expiresAt}:${workspaceId}`
+    : `${provider}:${nonce}:${expiresAt}`;
+  return signPayload(payload);
+}
+
+export function parseOAuthState(state: string, provider: OAuthProvider): ParsedOAuthState | undefined {
   try {
     const decoded = Buffer.from(state, "base64url").toString("utf8");
-    const [prov, , expiresAt, sig] = decoded.split(":");
-    if (prov !== provider) return false;
-    if (Date.now() > Number(expiresAt)) return false;
-    const payload = decoded.slice(0, decoded.lastIndexOf(":"));
+    const sigIndex = decoded.lastIndexOf(":");
+    if (sigIndex <= 0) return undefined;
+    const payload = decoded.slice(0, sigIndex);
+    const sig = decoded.slice(sigIndex + 1);
     const expected = createHmac("sha256", sessionSecret()).update(payload).digest("hex");
-    const a = Buffer.from(sig ?? "");
+    const a = Buffer.from(sig);
     const b = Buffer.from(expected);
-    return a.length === b.length && timingSafeEqual(a, b);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return undefined;
+
+    const parts = payload.split(":");
+    const prov = parts[0] as OAuthProvider;
+    if (prov !== provider) return undefined;
+    const expiresAt = Number(parts[2]);
+    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return undefined;
+
+    return {
+      provider: prov,
+      expiresAt,
+      workspaceId: parts[3],
+    };
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+export function verifyOAuthState(state: string, provider: OAuthProvider): boolean {
+  return Boolean(parseOAuthState(state, provider));
 }
 
 export function isGitHubOAuthEnabled(): boolean {
@@ -254,6 +301,8 @@ export async function handleGitHubCallback(code: string): Promise<User> {
   }
   if (!email) throw new Error("GitHub account has no public email");
 
+  await applyConsumerAuthPolicy(email);
+
   const githubId = String(ghUser.id);
   let user = await store.getUserByGithubId(githubId);
   if (!user) {
@@ -314,6 +363,8 @@ export async function handleGoogleCallback(code: string): Promise<User> {
   });
   const googleUser = (await userRes.json()) as GoogleUserInfo;
   if (!googleUser.email) throw new Error("Google account missing email");
+
+  await applyConsumerAuthPolicy(googleUser.email);
 
   const googleId = googleUser.sub;
   let user = await store.getUserByGoogleId(googleId);
@@ -414,7 +465,7 @@ async function upsertOidcUser(
   return user;
 }
 
-export async function handleEntraCallback(code: string): Promise<User> {
+export async function handleEntraCallback(code: string, workspaceId?: string): Promise<User> {
   const tokenRes = await fetch(
     `https://login.microsoftonline.com/${entraTenantId()}/oauth2/v2.0/token`,
     {
@@ -443,6 +494,8 @@ export async function handleEntraCallback(code: string): Promise<User> {
   const email = profile.email ?? profile.preferred_username;
   if (!email) throw new Error("Entra account missing email");
 
+  await applySsoAuthPolicy(email, "entra", workspaceId);
+
   return upsertOidcUser(
     "entra",
     profile.sub,
@@ -452,7 +505,7 @@ export async function handleEntraCallback(code: string): Promise<User> {
   );
 }
 
-export async function handleOktaCallback(code: string): Promise<User> {
+export async function handleOktaCallback(code: string, workspaceId?: string): Promise<User> {
   const tokenRes = await fetch(`${oktaIssuer()}/v1/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -477,6 +530,8 @@ export async function handleOktaCallback(code: string): Promise<User> {
   const email = profile.email ?? profile.preferred_username;
   if (!email) throw new Error("Okta account missing email");
 
+  await applySsoAuthPolicy(email, "okta", workspaceId);
+
   return upsertOidcUser(
     "okta",
     profile.sub,
@@ -485,3 +540,5 @@ export async function handleOktaCallback(code: string): Promise<User> {
     profile.picture,
   );
 }
+
+export { SsoPolicyError };

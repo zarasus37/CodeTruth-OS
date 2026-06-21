@@ -72,6 +72,20 @@ Enabled analyzers run during pipeline evaluation and merge supplemental findings
 
 Enterprise plan adds: `sso`, `data_residency`, `marketplace_analyzers`, `sovereign_services`.
 
+Assign Enterprise (admin token):
+
+```bash
+curl -X PUT /admin/workspaces/:id/subscription \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{"plan":"enterprise","status":"active"}'
+```
+
+## Policy enforcement
+
+- `DEPLOYMENT_REGION` + `ENFORCE_DATA_RESIDENCY=true` — blocks analyses when workspace region mismatches deployment
+- `settings.sso.enforceDomainSso` + `allowedEmailDomains` — forces SSO for matching email domains
+- Marketplace runs emit `marketplace.analyzer_run` product events
+
 ## Packages
 
 - `@codetruth/marketplace` — registry + analyzers
